@@ -409,7 +409,6 @@ final class ScrollControlsPanel: NSPanel {
 
     func setBusy() {
         doneButton.isEnabled = false
-        doneButton.alphaValue = 0.5
     }
 
     override func sendEvent(_ event: NSEvent) {

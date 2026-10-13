@@ -655,7 +655,7 @@ final class AllInOneBar: NSVisualEffectView, NSTextFieldDelegate {
     }
 }
 
-/// "↓ Start Capture" pill plus a "?" with tips, under a scrolling-capture selection.
+/// "↓ Start Capture" pill under a scrolling-capture selection.
 @MainActor
 final class ScrollStartBar: NSView {
     var onStart: (() -> Void)?
@@ -663,59 +663,84 @@ final class ScrollStartBar: NSView {
     init() {
         super.init(frame: .zero)
         let start = PillLabelButton(title: "Start Capture", symbol: "arrow.down", light: true) { [weak self] in self?.onStart?() }
-        let help = PillLabelButton(title: "", symbol: "questionmark", light: false) {}
-        help.toolTip = """
-        Select only the part that scrolls — leave out fixed headers and the scroll bar.
-        Then scroll slowly and straight down (or sideways), or use Auto-Scroll.
-        Scrolling back up is fine. Scrolling very fast or diagonally can break the capture.
-        """
-        let stack = NSStackView(views: [start, help])
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        start.toolTip = "Select only the part that scrolls, then scroll slowly or use Auto-Scroll. Return also starts."
+        start.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(start)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            start.leadingAnchor.constraint(equalTo: leadingAnchor),
+            start.trailingAnchor.constraint(equalTo: trailingAnchor),
+            start.topAnchor.constraint(equalTo: topAnchor),
+            start.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
-/// Rounded pill with an icon and optional title. Light = white with dark text; dark = translucent black.
+/// Rounded pill with an icon and a title, centred together with even padding.
+/// Light = white with dark text; dark = translucent black with white text.
 @MainActor
-final class PillLabelButton: NSButton {
+final class PillLabelButton: NSView {
     private let handler: () -> Void
+    private let light: Bool
+    private var pressed = false { didSet { updateLook() } }
 
     init(title: String, symbol: String, light: Bool, handler: @escaping () -> Void) {
         self.handler = handler
+        self.light = light
         super.init(frame: .zero)
-        isBordered = false
         wantsLayer = true
-        let height: CGFloat = 28
+        let height: CGFloat = 30
         layer?.cornerRadius = height / 2
-        layer?.backgroundColor = (light ? NSColor.white : NSColor.black.withAlphaComponent(0.72)).cgColor
-        layer?.shadowOpacity = 0.25
+        layer?.shadowOpacity = 0.2
+        layer?.shadowRadius = 3
+        layer?.shadowOffset = CGSize(width: 0, height: -1)
+
         let tint = light ? NSColor.black.withAlphaComponent(0.85) : NSColor.white
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .bold))
-        contentTintColor = tint
-        imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        attributedTitle = NSAttributedString(string: title.isEmpty ? "" : " \(title)", attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: tint
-        ])
-        target = self
-        action = #selector(clicked)
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: 11, weight: .bold)
+        icon.contentTintColor = tint
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = tint
+        let stack = NSStackView(views: title.isEmpty ? [icon] : [icon, label])
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: height).isActive = true
-        let width = title.isEmpty ? height : attributedTitle.size().width + 40
-        widthAnchor.constraint(equalToConstant: width).isActive = true
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: height),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: title.isEmpty ? 8 : 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: title.isEmpty ? -8 : -16)
+        ])
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
+        updateLook()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-    @objc private func clicked() { handler() }
+
+    /// The whole pill is one click target (the icon and label never take the click).
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        frame.contains(point) && !isHidden ? self : nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { if isEnabled { pressed = true } }
+
+    override func mouseUp(with event: NSEvent) {
+        pressed = false
+        if isEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) { handler() }
+    }
+
+    var isEnabled = true { didSet { alphaValue = isEnabled ? 1 : 0.5 } }
+
+    private func updateLook() {
+        let base = light ? NSColor.white : NSColor.black.withAlphaComponent(0.72)
+        let down = light ? NSColor(white: 0.88, alpha: 1) : NSColor.black.withAlphaComponent(0.85)
+        layer?.backgroundColor = (pressed ? down : base).cgColor
+    }
 }
 
 /// A large crosshair cursor: four arms with a gap in the middle, white with a
