@@ -17,7 +17,23 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
         current = controller
         controller.reload()
         NSApp.activate(ignoringOtherApps: true)
-        controller.panel.makeKeyAndOrderFront(nil)
+        controller.animateIn()
+    }
+
+    private static let slide: CGFloat = 24
+
+    /// Slides down a little and fades in.
+    private func animateIn() {
+        let target = panel.frame
+        panel.setFrame(target.offsetBy(dx: 0, dy: Self.slide), display: false)
+        panel.alphaValue = 0
+        panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+            panel.animator().alphaValue = 1
+        }
     }
 
     private let panel: HistoryPanel
@@ -41,7 +57,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.delegate = self
@@ -52,11 +68,21 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
         }
     }
 
+    /// Slides up a little and fades out.
     private func close() {
+        guard Self.current === self else { return }
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
-        panel.orderOut(nil)
         Self.current = nil
+        let panel = self.panel
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().setFrame(panel.frame.offsetBy(dx: 0, dy: Self.slide), display: true)
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            panel.orderOut(nil)
+        })
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -313,7 +339,8 @@ final class HistoryCell: NSCollectionViewItem {
     var onRestore: (() -> Void)?
     var menuProvider: (() -> NSMenu?)?
 
-    private let thumb = NSImageView()
+    /// Fills the tile (cropping as needed) so every capture shows at the same size.
+    private let thumb = NSView()
     private let badge = NSImageView()
     private let timeLabel = NSTextField(labelWithString: "")
     private var restoreButton: PillLabelButton!
@@ -325,8 +352,8 @@ final class HistoryCell: NSCollectionViewItem {
         root.onMenu = { [weak self] in self?.menuProvider?() }
         root.onHover = { [weak self] hovering in self?.setHover(hovering) }
 
-        thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
+        thumb.layer?.contentsGravity = .resizeAspectFill
         thumb.layer?.cornerRadius = 7
         thumb.layer?.masksToBounds = true
         thumb.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
@@ -403,10 +430,10 @@ final class HistoryCell: NSCollectionViewItem {
         }
         let size = "\(Int(Double(item.pixelWidth) / item.scale)) × \(Int(Double(item.pixelHeight) / item.scale))"
         view.toolTip = "\(item.kind == .screenshot ? "Screenshot" : item.kind == .gif ? "GIF" : "Recording") · \(size)"
-        thumb.image = nil
+        thumb.layer?.contents = nil
         HistoryStore.shared.thumbnail(for: item) { [weak self] image in
             guard let self, self.itemID == item.id else { return }
-            self.thumb.image = image
+            self.thumb.layer?.contents = image
         }
     }
 
