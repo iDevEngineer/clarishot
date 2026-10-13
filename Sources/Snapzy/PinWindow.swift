@@ -1,21 +1,33 @@
 import AppKit
+import ApplicationServices
+import Carbon.HIToolbox
 
-/// Keeps a screenshot floating above all other windows. Drag to move,
-/// double-click or press Esc to close.
+/// Keeps a screenshot floating above all other windows.
+/// Hover shows: close (top-left), lock (top-right) and Paste (bottom centre).
+/// While locked the pin can only be closed: no pasting and no moving.
+/// Double-click or Esc also closes it.
 @MainActor
 final class PinWindow: NSPanel {
     private static var open: [PinWindow] = []
+    /// The last app that wasn't Snapzy, so Paste goes back to where you were working.
+    private static var lastOtherApp: NSRunningApplication?
+    private static var observer: NSObjectProtocol?
+
+    private let capture: Capture
+    private let pinView: PinView
 
     static func pin(_ capture: Capture) {
+        trackFrontmostApp()
         let window = PinWindow(capture: capture)
         open.append(window)
         window.center()
         window.orderFrontRegardless()
-        window.makeKey()
     }
 
     private init(capture: Capture) {
+        self.capture = capture
         let size = Self.fittedSize(capture.pointSize)
+        pinView = PinView(frame: CGRect(origin: .zero, size: size), image: capture.image)
         super.init(contentRect: CGRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
@@ -23,22 +35,60 @@ final class PinWindow: NSPanel {
         hasShadow = true
         isMovableByWindowBackground = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        let view = PinView(frame: CGRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.layer?.contents = capture.image
-        view.layer?.contentsGravity = .resizeAspect
-        view.onClose = { [weak self] in self?.closePin() }
-        contentView = view
+        pinView.onClose = { [weak self] in self?.closePin() }
+        pinView.onPaste = { [weak self] in self?.paste() }
+        pinView.onLockChange = { [weak self] locked in self?.isMovableByWindowBackground = !locked }
+        contentView = pinView
     }
 
     override var canBecomeKey: Bool { true }
-
     override func cancelOperation(_ sender: Any?) { closePin() }
 
     private func closePin() {
         orderOut(nil)
         Self.open.removeAll { $0 === self }
+    }
+
+    // MARK: Paste
+
+    /// Copies the image and presses ⌘V in the app you were last using.
+    private func paste() {
+        capture.copyToClipboard()
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(options) else {
+            Toast.show("Copied — press ⌘V to paste (allow Snapzy in Accessibility to paste directly)")
+            return
+        }
+        let target = NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid()
+            ? Self.lastOtherApp : NSWorkspace.shared.frontmostApplication
+        target?.activate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            Self.pressCommandV()
+        }
+    }
+
+    private static func pressCommandV() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down)
+            event?.flags = .maskCommand
+            event?.post(tap: .cghidEventTap)
+        }
+    }
+
+    private static func trackFrontmostApp() {
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != getpid() {
+            lastOtherApp = front
+        }
+        guard observer == nil else { return }
+        observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated {
+                if let app, app.processIdentifier != getpid() { lastOtherApp = app }
+            }
+        }
     }
 
     /// Shrinks very large captures so the pin fits comfortably on screen.
@@ -49,8 +99,84 @@ final class PinWindow: NSPanel {
     }
 }
 
+/// The pinned image plus its hover controls.
+@MainActor
 private final class PinView: NSView {
     var onClose: (() -> Void)?
+    var onPaste: (() -> Void)?
+    var onLockChange: ((Bool) -> Void)?
+
+    private let controls = NSView()
+    private var lockButton: CircleButton!
+    private var pasteButton: PillButton!
+    private var locked = false
+
+    init(frame: CGRect, image: CGImage) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.contents = image
+        layer?.contentsGravity = .resizeAspect
+
+        controls.frame = bounds
+        controls.autoresizingMask = [.width, .height]
+        controls.alphaValue = 0
+        addSubview(controls)
+
+        let inset: CGFloat = 8
+        let size = CircleButton.size
+        let close = CircleButton(symbol: "xmark") { [weak self] in self?.onClose?() }
+        close.toolTip = "Close"
+        close.setFrameOrigin(CGPoint(x: inset, y: bounds.maxY - inset - size))
+        close.autoresizingMask = [.maxXMargin, .minYMargin]
+
+        lockButton = CircleButton(symbol: "lock.open.fill") { [weak self] in self?.toggleLock() }
+        lockButton.toolTip = "Lock: only allow closing"
+        lockButton.setFrameOrigin(CGPoint(x: bounds.maxX - inset - size, y: bounds.maxY - inset - size))
+        lockButton.autoresizingMask = [.minXMargin, .minYMargin]
+
+        pasteButton = PillButton(title: "Paste") { [weak self] in
+            guard let self, !self.locked else { return }
+            self.onPaste?()
+        }
+        pasteButton.setFrameOrigin(CGPoint(x: bounds.midX - pasteButton.frame.width / 2, y: inset))
+        pasteButton.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
+
+        [close, lockButton, pasteButton].forEach { controls.addSubview($0) }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    private func toggleLock() {
+        locked.toggle()
+        let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+        lockButton.image = NSImage(systemSymbolName: locked ? "lock.fill" : "lock.open.fill",
+                                   accessibilityDescription: locked ? "Locked" : "Unlocked")?.withSymbolConfiguration(config)
+        lockButton.contentTintColor = locked ? .white : NSColor.black.withAlphaComponent(0.8)
+        lockButton.layer?.backgroundColor = (locked ? NSColor.controlAccentColor : NSColor.white.withAlphaComponent(0.95)).cgColor
+        lockButton.toolTip = locked ? "Unlock" : "Lock: only allow closing"
+        pasteButton.isEnabled = !locked
+        pasteButton.alphaValue = locked ? 0.4 : 1
+        onLockChange?(locked)
+    }
+
+    // MARK: Hover
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { fadeControls(in: true) }
+    override func mouseExited(with event: NSEvent) { fadeControls(in: false) }
+
+    private func fadeControls(in visible: Bool) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            controls.animator().alphaValue = visible ? 1 : 0
+        }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
