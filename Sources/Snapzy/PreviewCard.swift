@@ -154,6 +154,9 @@ final class PreviewCardView: NSView, NSDraggingSource {
         layer?.shadowRadius = 14
         layer?.shadowOffset = CGSize(width: 0, height: -4)
         layer?.shadowPath = CGPath(roundedRect: thumbRect, cornerWidth: Self.radius, cornerHeight: Self.radius, transform: nil)
+        // Thin white outline; a layer's border draws above its sublayers, so it stays crisp over the hover dimming.
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        layer?.borderWidth = 1.5
 
         let thumb = CALayer()
         thumb.frame = thumbRect
