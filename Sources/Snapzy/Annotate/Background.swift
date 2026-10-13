@@ -81,14 +81,59 @@ enum Wallpaper {
     }
 }
 
-struct BackgroundStyle {
+struct BackgroundStyle: Codable, Equatable {
     var enabled = false
     var fillIndex = 0
     var padding: CGFloat = 64      // points
     var cornerRadius: CGFloat = 12 // points
     var shadow = true
+    /// Index into `aspects`: 0 = fit the screenshot, otherwise a fixed shape.
+    var aspect = 0
 
-    var fill: BackgroundFill { BackgroundFill.presets[fillIndex] }
+    static let aspects: [(title: String, ratio: CGFloat?)] = [
+        ("Auto", nil), ("1:1 Square", 1), ("4:3", 4.0 / 3), ("16:9", 16.0 / 9), ("9:16 Portrait", 9.0 / 16)
+    ]
+
+    var fill: BackgroundFill { BackgroundFill.presets[min(max(fillIndex, 0), BackgroundFill.presets.count - 1)] }
+
+    /// Space left and right (width) and above and below (height) the content,
+    /// widened on one side if needed to reach the chosen aspect ratio.
+    func insets(for content: CGSize) -> CGSize {
+        var w = content.width + 2 * padding, h = content.height + 2 * padding
+        if let ratio = Self.aspects[min(max(aspect, 0), Self.aspects.count - 1)].ratio {
+            if w / h < ratio { w = h * ratio } else { h = w / ratio }
+        }
+        return CGSize(width: (w - content.width) / 2, height: (h - content.height) / 2)
+    }
+}
+
+/// Saved background styles, by name.
+@MainActor
+enum BackgroundPresets {
+    private static let key = "backgroundPresets"
+
+    static var all: [(name: String, style: BackgroundStyle)] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let dict = try? JSONDecoder().decode([String: BackgroundStyle].self, from: data) else { return [] }
+        return dict.sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }.map { ($0.key, $0.value) }
+    }
+
+    static func style(named name: String) -> BackgroundStyle? { all.first { $0.name == name }?.style }
+
+    static func save(_ style: BackgroundStyle, as name: String) {
+        var dict = Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0.style) })
+        var s = style
+        s.enabled = true
+        dict[name] = s
+        if let data = try? JSONEncoder().encode(dict) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    static func delete(_ name: String) {
+        var dict = Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0.style) })
+        dict[name] = nil
+        if let data = try? JSONEncoder().encode(dict) { UserDefaults.standard.set(data, forKey: key) }
+        if Settings.shared.autoBackgroundPreset == name { Settings.shared.autoBackgroundPreset = nil }
+    }
 }
 
 enum BackgroundRenderer {
@@ -112,12 +157,13 @@ enum BackgroundRenderer {
     /// Places the flattened screenshot on the background at full resolution.
     @MainActor
     static func compose(_ image: CGImage, scale: CGFloat, style: BackgroundStyle) -> CGImage? {
-        let pad = Int((style.padding * scale).rounded())
-        let width = image.width + 2 * pad
-        let height = image.height + 2 * pad
+        let inset = style.insets(for: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
+        let padX = Int((inset.width * scale).rounded()), padY = Int((inset.height * scale).rounded())
+        let width = image.width + 2 * padX
+        let height = image.height + 2 * padY
         guard let ctx = AnnotationRenderer.makeContext(width: width, height: height, like: image) else { return nil }
         let full = CGRect(x: 0, y: 0, width: width, height: height)
-        let imageRect = CGRect(x: pad, y: pad, width: image.width, height: image.height)
+        let imageRect = CGRect(x: padX, y: padY, width: image.width, height: image.height)
         style.fill.fill(full, in: ctx, flipped: false)
         drawFramedImage(image, in: imageRect, radius: style.cornerRadius * scale,
                         shadow: style.shadow, shadowScale: scale, ctx: ctx, flipped: false)
@@ -168,6 +214,11 @@ final class BackgroundViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func loadView() {
+        view = makeView()
+    }
+
+    /// Rebuilt when a preset is applied so every control shows the new values.
+    private func makeView() -> NSView {
         toggle.state = style.enabled ? .on : .off
         toggle.target = self
         toggle.action = #selector(toggled(_:))
@@ -191,18 +242,75 @@ final class BackgroundViewController: NSViewController {
         let radius = slider(value: style.cornerRadius, max: 40, action: #selector(radiusChanged(_:)))
         let shadow = NSButton(checkboxWithTitle: "Shadow", target: self, action: #selector(shadowToggled(_:)))
         shadow.state = style.shadow ? .on : .off
+        let aspect = NSPopUpButton(frame: .zero, pullsDown: false)
+        aspect.addItems(withTitles: BackgroundStyle.aspects.map(\.title))
+        aspect.selectItem(at: style.aspect)
+        aspect.target = self
+        aspect.action = #selector(aspectChanged(_:))
+        let presets = NSButton(title: "Presets ▾", target: self, action: #selector(showPresets(_:)))
+        presets.bezelStyle = .rounded
 
         let stack = NSStackView(views: [header, grid,
                                         row(label("Padding"), padding),
                                         row(label("Corners"), radius),
-                                        shadow])
+                                        row(label("Shape"), aspect),
+                                        NSStackView(views: [shadow, NSView(), presets])])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
         header.translatesAutoresizingMaskIntoConstraints = false
         header.widthAnchor.constraint(equalToConstant: 232).isActive = true
-        view = stack
+        if let last = stack.views.last {
+            last.translatesAutoresizingMaskIntoConstraints = false
+            last.widthAnchor.constraint(equalToConstant: 232).isActive = true
+        }
+        return stack
+    }
+
+    @objc private func aspectChanged(_ sender: NSPopUpButton) {
+        update { $0.aspect = sender.indexOfSelectedItem; $0.enabled = true }
+        toggle.state = .on
+    }
+
+    @objc private func showPresets(_ sender: NSButton) {
+        let menu = NSMenu()
+        let saved = BackgroundPresets.all
+        for preset in saved {
+            menu.addItem(ClosureMenuItem(title: preset.name) { [weak self] in
+                guard let self else { return }
+                self.style = preset.style
+                self.onChange(self.style)
+                self.view = self.makeView()
+            })
+        }
+        if !saved.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(ClosureMenuItem(title: "Save Current as Preset…") { [weak self] in self?.savePreset() })
+        if !saved.isEmpty {
+            let delete = NSMenuItem(title: "Delete Preset", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            for preset in saved { sub.addItem(ClosureMenuItem(title: preset.name) { BackgroundPresets.delete(preset.name) }) }
+            delete.submenu = sub
+            menu.addItem(delete)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
+    }
+
+    private func savePreset() {
+        let alert = NSAlert()
+        alert.messageText = "Save background preset"
+        alert.informativeText = "Name this style so you can reuse it, or apply it to every screenshot in Settings → Screenshots."
+        let field = NSTextField(frame: CGRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "e.g. Blog post"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        BackgroundPresets.save(style, as: name)
+        Toast.show("Saved preset “\(name)”")
     }
 
     private func label(_ text: String, bold: Bool = false) -> NSTextField {

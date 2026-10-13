@@ -100,6 +100,15 @@ final class Settings {
         set { set(newValue.rawValue, "windowStyle") }
     }
 
+    /// Name of a background preset to add to every new screenshot, or nil.
+    var autoBackgroundPreset: String? {
+        get { defaults.string(forKey: "autoBackgroundPreset") }
+        set {
+            if let newValue { defaults.set(newValue, forKey: "autoBackgroundPreset") } else { defaults.removeObject(forKey: "autoBackgroundPreset") }
+            notify()
+        }
+    }
+
     var showMagnifier: Bool {
         get { bool("showMagnifier", default: true) }
         set { set(newValue, "showMagnifier") }
@@ -228,7 +237,7 @@ final class Settings {
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",
-                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle"] {
+                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle", "autoBackgroundPreset"] {
             defaults.removeObject(forKey: key)
         }
         notify()

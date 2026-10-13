@@ -51,25 +51,30 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Coordinate mapping (view points <-> image points)
 
     /// Padding around the image when the background is on, in image points.
-    private var padding: CGFloat { document.background.enabled ? document.background.padding : 0 }
+    /// Space around the image for the background (x = sides, y = top and bottom), in image points.
+    private var backgroundInset: CGSize {
+        document.background.enabled ? document.background.insets(for: document.crop.size) : .zero
+    }
 
     private var viewScale: CGFloat {
         let crop = document.crop
         let available = bounds.insetBy(dx: margin, dy: margin)
-        let total = CGSize(width: crop.width + 2 * padding, height: crop.height + 2 * padding)
+        let inset = backgroundInset
+        let total = CGSize(width: crop.width + 2 * inset.width, height: crop.height + 2 * inset.height)
         return min(1, available.width / max(total.width, 1), available.height / max(total.height, 1))
     }
 
     /// Screenshot plus background, in view points.
     private var frameRectInView: CGRect {
         let s = viewScale
-        let size = CGSize(width: (document.crop.width + 2 * padding) * s, height: (document.crop.height + 2 * padding) * s)
+        let inset = backgroundInset
+        let size = CGSize(width: (document.crop.width + 2 * inset.width) * s, height: (document.crop.height + 2 * inset.height) * s)
         return CGRect(x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded(),
                       width: size.width, height: size.height)
     }
 
     private var imageRectInView: CGRect {
-        frameRectInView.insetBy(dx: padding * viewScale, dy: padding * viewScale)
+        frameRectInView.insetBy(dx: backgroundInset.width * viewScale, dy: backgroundInset.height * viewScale)
     }
 
     private func toImage(_ p: CGPoint) -> CGPoint {

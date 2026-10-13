@@ -139,7 +139,11 @@ final class CaptureCoordinator {
     /// Runs the after-capture actions from Settings → Screenshots for a finished screenshot.
     func deliver(_ original: Capture) {
         let settings = Settings.shared
-        let capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
+        var capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
+        if !capture.isVideo, let name = settings.autoBackgroundPreset, let style = BackgroundPresets.style(named: name),
+           let framed = BackgroundRenderer.compose(capture.image, scale: capture.scale, style: style) {
+            capture = Capture(image: framed, scale: capture.scale)
+        }
         if settings.playSounds { CaptureSound.play() }
         HistoryStore.shared.add(capture)
         var acted = false

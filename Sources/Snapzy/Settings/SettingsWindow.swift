@@ -245,6 +245,11 @@ final class ScreenshotsPane: SettingsPane {
         row("Window captures", popup(styles.map(\.title), selected: styles.firstIndex(of: s.windowStyle) ?? 1) {
             s.windowStyle = styles[$0]
         })
+        let presets = BackgroundPresets.all.map(\.name)
+        row("Background", popup(["None"] + presets, selected: (presets.firstIndex { $0 == s.autoBackgroundPreset } ?? -1) + 1) {
+            s.autoBackgroundPreset = $0 == 0 ? nil : presets[$0 - 1]
+        })
+        note("Adds a saved background preset to every new screenshot. Create presets in Annotate’s background tool.")
         let delays = [3, 5, 10]
         row("Self-timer", popup(["3 seconds", "5 seconds", "10 seconds"], selected: delays.firstIndex(of: s.selfTimerSeconds) ?? 1) {
             s.selfTimerSeconds = delays[$0]
