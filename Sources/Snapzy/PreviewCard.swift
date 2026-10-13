@@ -310,11 +310,11 @@ final class PillButton: NSButton {
 
     init(title: String, handler: @escaping () -> Void) {
         self.handler = handler
-        super.init(frame: CGRect(x: 0, y: 0, width: 86, height: 28))
+        super.init(frame: CGRect(x: 0, y: 0, width: 88, height: 30))
         isBordered = false
         wantsLayer = true
         layer?.backgroundColor = NSColor.white.withAlphaComponent(0.95).cgColor
-        layer?.cornerRadius = 7
+        layer?.cornerRadius = 15 // fully rounded ends (pill)
         attributedTitle = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.black.withAlphaComponent(0.85)
