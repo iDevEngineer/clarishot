@@ -1,6 +1,9 @@
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
+import os
+
+private let log = Logger(subsystem: "com.scottmackey.snapzy", category: "paste")
 
 /// Keeps a screenshot floating above all other windows.
 /// Hover shows: close (top-left), lock (top-right) and Paste (bottom centre).
@@ -55,6 +58,8 @@ final class PinWindow: NSPanel {
     /// Copies the image and presses ⌘V in the app you were last using.
     private func paste() {
         capture.copyToClipboard()
+        let front = NSWorkspace.shared.frontmostApplication
+        log.notice("Paste clicked. trusted=\(AXIsProcessTrusted(), privacy: .public) front=\(front?.bundleIdentifier ?? "nil", privacy: .public) lastOther=\(Self.lastOtherApp?.bundleIdentifier ?? "nil", privacy: .public) clipboard=\(NSPasteboard.general.types?.map(\.rawValue).joined(separator: ",") ?? "", privacy: .public)")
         guard AXIsProcessTrusted() else {
             // Show the system prompt so the user can allow it, and leave the image on the clipboard.
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -64,13 +69,13 @@ final class PinWindow: NSPanel {
         }
         // Paste into the app you were working in (clicking the pin doesn't switch apps, but a
         // Snapzy window like Annotate might be in front).
-        let front = NSWorkspace.shared.frontmostApplication
         var delay = 0.05
         if front?.processIdentifier == getpid(), let target = Self.lastOtherApp {
             target.activate()
             delay = 0.25
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            log.notice("Sending Cmd-V to \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil", privacy: .public)")
             Self.pressCommandV()
         }
     }
@@ -81,9 +86,12 @@ final class PinWindow: NSPanel {
         let command = CGKeyCode(kVK_Command), v = CGKeyCode(kVK_ANSI_V)
         let steps: [(CGKeyCode, Bool)] = [(command, true), (v, true), (v, false), (command, false)]
         for (key, down) in steps {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down)
-            event?.flags = (key == v || down) ? .maskCommand : []
-            event?.post(tap: .cghidEventTap)
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else {
+                log.error("Could not create key event")
+                continue
+            }
+            event.flags = (key == v || down) ? .maskCommand : []
+            event.post(tap: .cghidEventTap)
         }
     }
 
