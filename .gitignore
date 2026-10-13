@@ -5,6 +5,9 @@ build/
 # App bundles
 *.app/
 
+# Local research notes and reference images (not committed)
+research/
+
 # macOS / tooling
 .DS_Store
 .claude/
