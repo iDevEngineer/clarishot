@@ -110,7 +110,7 @@ final class Settings {
     }
 
     var showMagnifier: Bool {
-        get { bool("showMagnifier", default: true) }
+        get { bool("showMagnifier", default: false) }
         set { set(newValue, "showMagnifier") }
     }
 

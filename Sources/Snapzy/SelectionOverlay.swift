@@ -390,7 +390,7 @@ final class OverlayView: NSView {
         case .window: drawWindowHighlight(ctx)
         }
         if let hint, selection == nil { drawHint(hint) }
-        if Settings.shared.showMagnifier, mode != .window, let mouse, isDrawingOrIdle {
+        if Settings.shared.showMagnifier, mode != .window, mode != .scrollArea, let mouse, isDrawingOrIdle {
             drawMagnifier(at: mouse, ctx)
         }
     }
@@ -403,18 +403,29 @@ final class OverlayView: NSView {
         }
     }
 
-    /// Instruction pill near the top of the screen.
+    /// Large light instruction pill in the middle of the screen.
     private func drawHint(_ text: String) {
         let string = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
-            .foregroundColor: NSColor.white
+            .font: NSFont.systemFont(ofSize: 17, weight: .medium),
+            .foregroundColor: NSColor.black.withAlphaComponent(0.82)
         ])
         let size = string.size()
-        let box = CGRect(x: bounds.midX - size.width / 2 - 16, y: bounds.maxY - 90,
-                         width: size.width + 32, height: size.height + 16)
-        NSColor.black.withAlphaComponent(0.75).setFill()
-        NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2).fill()
-        string.draw(at: CGPoint(x: box.minX + 16, y: box.minY + 8))
+        let box = CGRect(x: (bounds.midX - size.width / 2 - 30).rounded(), y: (bounds.midY - size.height / 2 - 16).rounded(),
+                         width: (size.width + 60).rounded(), height: (size.height + 32).rounded())
+        let pill = NSBezierPath(roundedRect: box, xRadius: box.height / 2, yRadius: box.height / 2)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 16
+        shadow.shadowOffset = CGSize(width: 0, height: -4)
+        shadow.set()
+        NSColor(white: 0.9, alpha: 0.92).setFill()
+        pill.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.white.withAlphaComponent(0.6).setStroke()
+        pill.lineWidth = 1
+        pill.stroke()
+        string.draw(at: CGPoint(x: box.minX + 30, y: box.minY + 16))
     }
 
     private func drawArea(_ ctx: CGContext) {
