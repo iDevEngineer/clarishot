@@ -3,13 +3,14 @@ import CoreImage
 
 /// Editor tools, in toolbar order. `key` is the single-letter shortcut.
 enum Tool: CaseIterable {
-    case select, crop, rectangle, ellipse, line, arrow, text, highlighter, pixelate, blur, spotlight, counter, pencil
+    case select, crop, rectangle, filledRectangle, ellipse, line, arrow, text, highlighter, pixelate, blur, spotlight, counter, pencil
 
     var symbol: String {
         switch self {
         case .select: return "cursorarrow"
         case .crop: return "crop"
         case .rectangle: return "square"
+        case .filledRectangle: return "square.fill"
         case .ellipse: return "circle"
         case .line: return "line.diagonal"
         case .arrow: return "arrow.up.right"
@@ -28,6 +29,7 @@ enum Tool: CaseIterable {
         case .select: return "Select"
         case .crop: return "Crop"
         case .rectangle: return "Rectangle"
+        case .filledRectangle: return "Filled Rectangle"
         case .ellipse: return "Ellipse"
         case .line: return "Line"
         case .arrow: return "Arrow"
@@ -46,6 +48,7 @@ enum Tool: CaseIterable {
         case .select: return "v"
         case .crop: return "c"
         case .rectangle: return "r"
+        case .filledRectangle: return "f"
         case .ellipse: return "o"
         case .line: return "l"
         case .arrow: return "a"
@@ -63,6 +66,38 @@ enum Tool: CaseIterable {
     var isFreehand: Bool { self == .pencil || self == .highlighter }
 }
 
+enum ArrowStyle: Int, CaseIterable {
+    case straight, curved
+    var title: String { self == .straight ? "Straight" : "Curved" }
+}
+
+/// Text looks, chosen from the editor's Style menu.
+enum TextStyle: Int, CaseIterable {
+    case outline, plain, shadow, filledBox, lightBox, mono, serif
+
+    var title: String {
+        switch self {
+        case .outline: return "Outlined"
+        case .plain: return "Plain"
+        case .shadow: return "Shadow"
+        case .filledBox: return "Filled Label"
+        case .lightBox: return "Light Label"
+        case .mono: return "Monospaced"
+        case .serif: return "Serif"
+        }
+    }
+
+    var hasBox: Bool { self == .filledBox || self == .lightBox }
+
+    func font(size: CGFloat) -> NSFont {
+        switch self {
+        case .mono: return .monospacedSystemFont(ofSize: size, weight: .bold)
+        case .serif: return NSFont(name: "Georgia-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+        default: return .systemFont(ofSize: size, weight: .bold)
+        }
+    }
+}
+
 /// One shape drawn on top of the screenshot. Points are in image points,
 /// with a top-left origin.
 struct Annotation {
@@ -74,6 +109,18 @@ struct Annotation {
     var lineWidth: CGFloat
     var text = ""
     var number = 0
+    /// Arrow: `ArrowStyle` raw value. Text: `TextStyle` raw value.
+    var style = 0
+
+    var arrowStyle: ArrowStyle { ArrowStyle(rawValue: style) ?? .straight }
+    var textStyle: TextStyle { TextStyle(rawValue: style) ?? .outline }
+
+    /// The bend point of a curved arrow.
+    var curveControl: CGPoint {
+        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let dx = end.x - start.x, dy = end.y - start.y
+        return CGPoint(x: mid.x - dy * 0.3, y: mid.y + dx * 0.3)
+    }
 
     var rect: CGRect {
         CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
@@ -107,6 +154,10 @@ struct Annotation {
             if tool == .highlighter { pad = highlighterWidth / 2 + 4 }
         case .text:
             base = CGRect(origin: start, size: NSAttributedString(string: text, attributes: textAttributes()).size())
+            if textStyle.hasBox { pad += 8 }
+        case .arrow where arrowStyle == .curved:
+            let c = curveControl
+            base = rect.union(CGRect(x: c.x, y: c.y, width: 0, height: 0))
         case .counter:
             let d = counterDiameter
             base = CGRect(x: start.x - d / 2, y: start.y - d / 2, width: d, height: d)
@@ -118,8 +169,8 @@ struct Annotation {
 
     func textAttributes(outline: Bool = false) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
-            .foregroundColor: color
+            .font: textStyle.font(size: fontSize),
+            .foregroundColor: textStyle == .filledBox ? NSColor.white : color
         ]
         if outline {
             attributes[.foregroundColor] = NSColor.white
@@ -196,6 +247,12 @@ enum AnnotationRenderer {
             ctx.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil))
             ctx.strokePath()
 
+        case .filledRectangle:
+            let r = a.rect
+            let radius = min(a.lineWidth + 2, r.width / 2, r.height / 2)
+            ctx.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.fillPath()
+
         case .ellipse:
             ctx.strokeEllipse(in: a.rect)
 
@@ -205,8 +262,12 @@ enum AnnotationRenderer {
             ctx.strokePath()
 
         case .arrow:
-            ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
-            ctx.fillPath()
+            if a.arrowStyle == .curved {
+                drawCurvedArrow(a, ctx)
+            } else {
+                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
+                ctx.fillPath()
+            }
 
         case .pencil, .highlighter:
             guard let first = a.points.first else { return }
@@ -245,14 +306,47 @@ enum AnnotationRenderer {
             }
 
         case .text:
+            let string = NSAttributedString(string: a.text, attributes: a.textAttributes())
+            let style = a.textStyle
+            if style.hasBox {
+                let box = CGRect(origin: a.start, size: string.size()).insetBy(dx: -8, dy: -4)
+                ctx.addPath(CGPath(roundedRect: box, cornerWidth: 6, cornerHeight: 6, transform: nil))
+                ctx.setFillColor(style == .filledBox ? a.color.cgColor : NSColor.white.withAlphaComponent(0.95).cgColor)
+                ctx.fillPath()
+            }
+            if style == .shadow {
+                ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 4, color: NSColor.black.withAlphaComponent(0.6).cgColor)
+            }
             withFlippedNSContext(ctx) {
-                NSAttributedString(string: a.text, attributes: a.textAttributes(outline: true)).draw(at: a.start)
-                NSAttributedString(string: a.text, attributes: a.textAttributes()).draw(at: a.start)
+                if style == .outline {
+                    NSAttributedString(string: a.text, attributes: a.textAttributes(outline: true)).draw(at: a.start)
+                }
+                string.draw(at: a.start)
             }
 
         case .select, .crop, .spotlight:
             break
         }
+    }
+
+    /// Bent arrow: a curved shaft ending in a solid head that follows the curve.
+    private static func drawCurvedArrow(_ a: Annotation, _ ctx: CGContext) {
+        let c = a.curveControl, end = a.end, w = a.lineWidth
+        let dx = end.x - c.x, dy = end.y - c.y
+        let length = max(hypot(dx, dy), 0.001)
+        let u = CGPoint(x: dx / length, y: dy / length), n = CGPoint(x: -u.y, y: u.x)
+        let headLength = min(w * 4.5 + 6, hypot(end.x - a.start.x, end.y - a.start.y) * 0.5)
+        let headWidth = w * 3.6 + 6
+        let base = CGPoint(x: end.x - u.x * headLength, y: end.y - u.y * headLength)
+        ctx.setLineWidth(w * 1.3)
+        ctx.move(to: a.start)
+        ctx.addQuadCurve(to: base, control: c)
+        ctx.strokePath()
+        ctx.move(to: CGPoint(x: base.x + n.x * headWidth / 2, y: base.y + n.y * headWidth / 2))
+        ctx.addLine(to: end)
+        ctx.addLine(to: CGPoint(x: base.x - n.x * headWidth / 2, y: base.y - n.y * headWidth / 2))
+        ctx.closePath()
+        ctx.fillPath()
     }
 
     /// Tapered arrow: thin at the tail, widening into a solid head.
@@ -321,22 +415,72 @@ enum AnnotationRenderer {
 @MainActor
 final class AnnotateDocument {
     let capture: Capture
-    let imageSize: CGSize
-    let effects: EffectImages
+    /// The picture being annotated; replaced by rotate/flip.
+    private(set) var baseImage: CGImage
+    private(set) var imageSize: CGSize
+    private(set) var effects: EffectImages
     var annotations: [Annotation] = []
     var crop: CGRect
     /// Background around the screenshot. Not part of undo history.
     var background = BackgroundStyle()
 
-    private typealias State = (annotations: [Annotation], crop: CGRect)
+    private struct State {
+        let baseImage: CGImage
+        let imageSize: CGSize
+        let annotations: [Annotation]
+        let crop: CGRect
+    }
     private var undoStack: [State] = []
     private var redoStack: [State] = []
 
     init(capture: Capture) {
         self.capture = capture
+        baseImage = capture.image
         imageSize = capture.pointSize
         crop = CGRect(origin: .zero, size: capture.pointSize)
         effects = EffectImages(image: capture.image, scale: capture.scale)
+    }
+
+    enum Transform { case rotateLeft, rotateRight, flipHorizontal, flipVertical }
+
+    /// Flattens the drawing into the picture, then rotates or flips it (undoable).
+    func apply(_ transform: Transform) {
+        guard let flat = AnnotationRenderer.render(base: baseImage, scale: capture.scale, imageSize: imageSize,
+                                                   crop: crop, annotations: annotations, effects: effects)
+        else { return }
+        let rotates = transform == .rotateLeft || transform == .rotateRight
+        let w = rotates ? flat.height : flat.width, h = rotates ? flat.width : flat.height
+        guard let ctx = AnnotationRenderer.makeContext(width: w, height: h, like: flat) else { return }
+        switch transform {
+        case .rotateRight:
+            ctx.translateBy(x: 0, y: CGFloat(h)); ctx.rotate(by: -.pi / 2)
+        case .rotateLeft:
+            ctx.translateBy(x: CGFloat(w), y: 0); ctx.rotate(by: .pi / 2)
+        case .flipHorizontal:
+            ctx.translateBy(x: CGFloat(w), y: 0); ctx.scaleBy(x: -1, y: 1)
+        case .flipVertical:
+            ctx.translateBy(x: 0, y: CGFloat(h)); ctx.scaleBy(x: 1, y: -1)
+        }
+        ctx.draw(flat, in: CGRect(x: 0, y: 0, width: flat.width, height: flat.height))
+        guard let result = ctx.makeImage() else { return }
+        checkpoint()
+        setBase(result)
+        annotations = []
+        crop = CGRect(origin: .zero, size: imageSize)
+    }
+
+    private func setBase(_ image: CGImage) {
+        baseImage = image
+        imageSize = CGSize(width: CGFloat(image.width) / capture.scale, height: CGFloat(image.height) / capture.scale)
+        effects = EffectImages(image: image, scale: capture.scale)
+    }
+
+    private var state: State { State(baseImage: baseImage, imageSize: imageSize, annotations: annotations, crop: crop) }
+
+    private func restore(_ s: State) {
+        if s.baseImage !== baseImage { setBase(s.baseImage) }
+        annotations = s.annotations
+        crop = s.crop
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
@@ -345,24 +489,24 @@ final class AnnotateDocument {
 
     /// Call before every change so it can be undone.
     func checkpoint() {
-        undoStack.append((annotations, crop))
+        undoStack.append(state)
         redoStack.removeAll()
     }
 
     func undo() {
-        guard let state = undoStack.popLast() else { return }
-        redoStack.append((annotations, crop))
-        (annotations, crop) = state
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(state)
+        restore(previous)
     }
 
     func redo() {
-        guard let state = redoStack.popLast() else { return }
-        undoStack.append((annotations, crop))
-        (annotations, crop) = state
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(state)
+        restore(next)
     }
 
     func rendered() -> Capture? {
-        guard let flat = AnnotationRenderer.render(base: capture.image, scale: capture.scale, imageSize: imageSize,
+        guard let flat = AnnotationRenderer.render(base: baseImage, scale: capture.scale, imageSize: imageSize,
                                                    crop: crop, annotations: annotations, effects: effects)
         else { return nil }
         guard background.enabled else { return Capture(image: flat, scale: capture.scale) }

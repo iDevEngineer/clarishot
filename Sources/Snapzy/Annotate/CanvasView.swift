@@ -10,6 +10,10 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
     var color: NSColor = .systemRed
     var lineWidth: CGFloat = 4
+    var arrowStyle: ArrowStyle = .straight
+    var textStyle: TextStyle = .outline
+    /// Width ÷ height for the crop tool, or nil for free cropping.
+    var cropAspect: CGFloat?
 
     /// Called after any change, so the toolbar can refresh undo/redo.
     var onChange: (() -> Void)?
@@ -111,7 +115,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             ctx.saveGState()
             ctx.clip(to: imageRect)
             applyImageTransform(ctx, imageRect)
-            AnnotationRenderer.drawImage(document.capture.image, in: CGRect(origin: .zero, size: document.imageSize), ctx: ctx)
+            AnnotationRenderer.drawImage(document.baseImage, in: CGRect(origin: .zero, size: document.imageSize), ctx: ctx)
             AnnotationRenderer.drawAll(annotations, in: ctx, effects: document.effects, imageSize: document.imageSize)
             ctx.restoreGState()
         }
@@ -136,7 +140,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     /// The annotated, cropped screenshot as an image at screen resolution (for rounded corners).
     private func renderedForView(annotations: [Annotation]) -> CGImage? {
         let pixelScale = viewScale * (window?.backingScaleFactor ?? 2)
-        return AnnotationRenderer.render(base: document.capture.image, scale: pixelScale, imageSize: document.imageSize,
+        return AnnotationRenderer.render(base: document.baseImage, scale: pixelScale, imageSize: document.imageSize,
                                          crop: document.crop, annotations: annotations, effects: document.effects)
     }
 
@@ -190,7 +194,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
                                                    lineWidth: lineWidth, number: document.nextCounterNumber))
             changed()
         default:
-            draft = Annotation(tool: tool, start: p, end: p, points: [p], color: color, lineWidth: lineWidth)
+            draft = Annotation(tool: tool, start: p, end: p, points: [p], color: color, lineWidth: lineWidth,
+                               style: tool == .arrow ? arrowStyle.rawValue : 0)
         }
         needsDisplay = true
     }
@@ -208,8 +213,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .crop:
             guard let start = cropStart else { return }
             p = clampToImage(p)
+            if let ratio = cropAspect {
+                // Keep the chosen shape: follow the wider drag direction.
+                var w = abs(p.x - start.x), h = abs(p.y - start.y)
+                if w / max(h, 1) > ratio { h = w / ratio } else { w = h * ratio }
+                p = CGPoint(x: start.x + (p.x < start.x ? -w : w), y: start.y + (p.y < start.y ? -h : h))
+            }
             cropDraft = CGRect(x: min(start.x, p.x), y: min(start.y, p.y),
-                               width: abs(p.x - start.x), height: abs(p.y - start.y)).integral
+                               width: abs(p.x - start.x), height: abs(p.y - start.y)).intersection(document.crop).integral
         default:
             guard var d = draft else { return }
             if shift { p = constrained(p, from: d.start, tool: d.tool) }
@@ -275,6 +286,11 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         document.checkpoint()
         document.annotations[index].color = color
         document.annotations[index].lineWidth = lineWidth
+        switch document.annotations[index].tool {
+        case .arrow: document.annotations[index].style = arrowStyle.rawValue
+        case .text: document.annotations[index].style = textStyle.rawValue
+        default: break
+        }
         changed()
     }
 
@@ -298,17 +314,18 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         let existing = document.annotations[index]
         editingIndex = index
         selectedIndex = nil
+        textStyle = existing.textStyle
         beginText(at: existing.start, text: existing.text, color: existing.color, lineWidth: existing.lineWidth)
         needsDisplay = true
     }
 
     private func beginText(at p: CGPoint, text: String, color: NSColor, lineWidth: CGFloat) {
-        let sample = Annotation(tool: .text, start: p, end: p, color: color, lineWidth: lineWidth)
+        let sample = Annotation(tool: .text, start: p, end: p, color: color, lineWidth: lineWidth, style: textStyle.rawValue)
         let field = NSTextField(string: text)
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: sample.fontSize * viewScale, weight: .bold)
+        field.font = textStyle.font(size: sample.fontSize * viewScale)
         field.textColor = color
         field.placeholderString = "Text"
         field.delegate = self
@@ -342,14 +359,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if text.isEmpty {
                 document.checkpoint()
                 document.annotations.remove(at: index)
-            } else if text != old.text {
+            } else if text != old.text || textStyle.rawValue != old.style {
                 document.checkpoint()
                 document.annotations[index].text = text
+                document.annotations[index].style = textStyle.rawValue
             }
         } else if !text.isEmpty {
             document.checkpoint()
             document.annotations.append(Annotation(tool: .text, start: anchor, end: anchor, color: color,
-                                                   lineWidth: lineWidth, text: text))
+                                                   lineWidth: lineWidth, text: text, style: textStyle.rawValue))
         }
         editingIndex = nil
         changed()
@@ -376,7 +394,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             let angle = (atan2(dy, dx) / (.pi / 4)).rounded() * (.pi / 4)
             let length = hypot(dx, dy)
             return CGPoint(x: start.x + cos(angle) * length, y: start.y + sin(angle) * length)
-        case .rectangle, .ellipse, .pixelate, .blur, .spotlight:
+        case .rectangle, .filledRectangle, .ellipse, .pixelate, .blur, .spotlight:
             let side = max(abs(dx), abs(dy))
             return CGPoint(x: start.x + (dx < 0 ? -side : side), y: start.y + (dy < 0 ? -side : side))
         default:

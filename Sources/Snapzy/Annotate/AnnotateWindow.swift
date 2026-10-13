@@ -28,6 +28,8 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private let undoButton = ToolButton(symbol: "arrow.uturn.backward", tip: "Undo (⌘Z)")
     private let redoButton = ToolButton(symbol: "arrow.uturn.forward", tip: "Redo (⇧⌘Z)")
     private let backgroundButton = ToolButton(symbol: "photo.artframe", tip: "Background")
+    private let styleButton = ToolButton(symbol: "paintbrush", tip: "Style: arrow, text and crop shape")
+    private let imageButton = ToolButton(symbol: "rotate.right", tip: "Rotate or flip")
     private var popover: NSPopover?
 
     private init(capture: Capture) {
@@ -41,7 +43,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Annotate"
-        window.minSize = CGSize(width: 900, height: 420)
+        window.minSize = CGSize(width: 1000, height: 420)
         window.delegate = self
         window.commands = self
         buildContent()
@@ -89,7 +91,10 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         save.bezelColor = .controlAccentColor
         for b in [copy, save] { b.bezelStyle = .rounded; b.controlSize = .regular }
 
-        let actions = NSStackView(views: [backgroundButton, separator(), colorButton, widthButton, separator(), undoButton, redoButton, separator(), copy, save])
+        styleButton.onClick = { [weak self] in self?.showStyleMenu() }
+        imageButton.onClick = { [weak self] in self?.showImageMenu() }
+        let actions = NSStackView(views: [backgroundButton, imageButton, separator(), styleButton, colorButton, widthButton,
+                                          separator(), undoButton, redoButton, separator(), copy, save])
         actions.spacing = 4
 
         tools.translatesAutoresizingMaskIntoConstraints = false
@@ -137,18 +142,84 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     }
 
     private func showColors() {
-        let palette = ColorPaletteViewController(colors: Self.colors) { [weak self] color in
+        let palette = ColorPaletteViewController(colors: Self.colors) { [weak self] color, close in
             guard let self else { return }
             self.canvas.color = color
             self.colorButton.color = color
             self.canvas.applyStyleToSelection()
-            self.popover?.close()
+            if close { self.popover?.close() }
         }
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = palette
         popover.show(relativeTo: colorButton.bounds, of: colorButton, preferredEdge: .maxY)
         self.popover = popover
+    }
+
+    /// Arrow shape, text style and crop ratio, with the current choice ticked.
+    private func showStyleMenu() {
+        let menu = NSMenu()
+        func header(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        header("Arrow")
+        for style in ArrowStyle.allCases {
+            let item = ClosureMenuItem(title: style.title) { [weak self] in
+                self?.canvas.arrowStyle = style
+                self?.canvas.applyStyleToSelection()
+                self?.selectTool(.arrow)
+            }
+            item.state = canvas.arrowStyle == style ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        header("Text")
+        for style in TextStyle.allCases {
+            let item = ClosureMenuItem(title: style.title) { [weak self] in
+                self?.canvas.textStyle = style
+                self?.canvas.applyStyleToSelection()
+                self?.selectTool(.text)
+            }
+            item.state = canvas.textStyle == style ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        header("Crop")
+        let ratios: [(String, CGFloat?)] = [("Free", nil), ("1:1 Square", 1), ("4:3", 4.0 / 3), ("3:2", 1.5),
+                                           ("16:9", 16.0 / 9), ("9:16 Portrait", 9.0 / 16)]
+        for (title, ratio) in ratios {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                self?.canvas.cropAspect = ratio
+                self?.selectTool(.crop)
+            }
+            item.state = canvas.cropAspect == ratio ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: styleButton.bounds.maxY + 4), in: styleButton)
+    }
+
+    private func showImageMenu() {
+        let menu = NSMenu()
+        let ops: [(String, AnnotateDocument.Transform)] = [
+            ("Rotate Left", .rotateLeft), ("Rotate Right", .rotateRight),
+            ("Flip Horizontally", .flipHorizontal), ("Flip Vertically", .flipVertical)
+        ]
+        for (title, op) in ops {
+            menu.addItem(ClosureMenuItem(title: title) { [weak self] in
+                guard let self else { return }
+                self.canvas.commitText()
+                self.document.apply(op)
+                self.canvas.refresh()
+                self.refreshUndo()
+            })
+        }
+        menu.addItem(.separator())
+        let note = NSMenuItem(title: "Drawings are merged into the image first", action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        menu.addItem(note)
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: imageButton.bounds.maxY + 4), in: imageButton)
     }
 
     private func showBackground() {
@@ -339,11 +410,16 @@ final class ColorSwatchButton: NSButton {
 }
 
 /// A row of colour swatches shown in a popover.
+/// Colour popover: standard colours, your recent custom colours, a screen
+/// colour picker and the full system colour panel.
+@MainActor
 final class ColorPaletteViewController: NSViewController {
     private let colors: [NSColor]
-    private let onPick: (NSColor) -> Void
+    /// The colour, and whether the popover should close.
+    private let onPick: (NSColor, Bool) -> Void
+    private static let savedKey = "customColors"
 
-    init(colors: [NSColor], onPick: @escaping (NSColor) -> Void) {
+    init(colors: [NSColor], onPick: @escaping (NSColor, Bool) -> Void) {
         self.colors = colors
         self.onPick = onPick
         super.init(nibName: nil, bundle: nil)
@@ -352,13 +428,78 @@ final class ColorPaletteViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func loadView() {
+        let standard = row(colors)
+        let saved = Self.savedColors()
+        let recent = row(saved)
+        let picker = ToolButton(symbol: "eyedropper", tip: "Pick a colour from the screen")
+        picker.onClick = { [weak self] in self?.pickFromScreen() }
+        let more = ToolButton(symbol: "paintpalette", tip: "More colours…")
+        more.onClick = { [weak self] in self?.openColorPanel() }
+        let tools = NSStackView(views: [picker, more, NSView()])
+        let stack = NSStackView(views: saved.isEmpty ? [standard, tools] : [standard, recent, tools])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        view = stack
+    }
+
+    private func row(_ colors: [NSColor]) -> NSStackView {
         let stack = NSStackView(views: colors.map { color in
             let swatch = ColorSwatchButton(color: color, size: 22)
-            swatch.onClick = { [weak self] in self?.onPick(color) }
+            swatch.onClick = { [weak self] in self?.onPick(color, true) }
             return swatch
         })
         stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        view = stack
+        return stack
+    }
+
+    private func pickFromScreen() {
+        view.window?.orderOut(nil)
+        NSColorSampler().show { [weak self] color in
+            guard let color else { return }
+            MainActor.assumeIsolated {
+                Self.remember(color)
+                self?.onPick(color, true)
+            }
+        }
+    }
+
+    private func openColorPanel() {
+        let panel = NSColorPanel.shared
+        panel.setTarget(self)
+        panel.setAction(#selector(colorPanelChanged(_:)))
+        panel.isContinuous = true
+        panel.orderFront(nil)
+    }
+
+    @objc private func colorPanelChanged(_ sender: NSColorPanel) {
+        Self.remember(sender.color)
+        onPick(sender.color, false)
+    }
+
+    // MARK: Saved colours (up to 8, newest first)
+
+    private static func savedColors() -> [NSColor] {
+        (UserDefaults.standard.stringArray(forKey: savedKey) ?? []).compactMap(color(hex:))
+    }
+
+    private static func remember(_ color: NSColor) {
+        guard let hex = hex(color) else { return }
+        var list = UserDefaults.standard.stringArray(forKey: savedKey) ?? []
+        list.removeAll { $0 == hex }
+        list.insert(hex, at: 0)
+        UserDefaults.standard.set(Array(list.prefix(8)), forKey: savedKey)
+    }
+
+    private static func hex(_ color: NSColor) -> String? {
+        guard let c = color.usingColorSpace(.sRGB) else { return nil }
+        return String(format: "%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+    }
+
+    private static func color(hex: String) -> NSColor? {
+        guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
     }
 }
