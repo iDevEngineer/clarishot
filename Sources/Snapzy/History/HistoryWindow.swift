@@ -1,94 +1,141 @@
 import AppKit
 
-/// Grid of recent captures. Double-click puts one back on a preview card;
-/// right-click for Annotate, Copy, Save, Pin, Show in Finder and Delete.
+/// Capture History as a dark strip across the top of the screen: filters centred at the
+/// top, a "…" menu on the right, and a row of captures that scrolls sideways.
+/// Click to select (shows Restore), double-click to restore, right-click for more.
+/// Esc or clicking elsewhere closes it.
 @MainActor
-final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCollectionViewDataSource,
-                                     NSCollectionViewDelegate {
+final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionViewDataSource, NSCollectionViewDelegate {
     private static var current: HistoryWindowController?
 
     static func show() {
-        let controller = current ?? HistoryWindowController()
+        if let current {
+            current.close()
+            return
+        }
+        let controller = HistoryWindowController()
         current = controller
         controller.reload()
         NSApp.activate(ignoringOtherApps: true)
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.panel.makeKeyAndOrderFront(nil)
     }
 
+    private let panel: HistoryPanel
     private let collection = NSCollectionView()
-    private let filter = NSSegmentedControl(labels: ["All", "Screenshots", "Recordings", "GIFs"],
-                                            trackingMode: .selectOne, target: nil, action: nil)
+    private var filterButtons: [HistoryFilterPill] = []
+    private var filter: HistoryStore.Kind?
     private let emptyLabel = NSTextField(labelWithString: "")
     private var shown: [HistoryStore.Item] = []
     private var observer: NSObjectProtocol?
+    private static let stripHeight: CGFloat = 176
 
-    private init() {
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 860, height: 560),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Capture History"
-        window.minSize = CGSize(width: 520, height: 360)
-        super.init(window: window)
-        window.delegate = self
-        window.isReleasedWhenClosed = false
+    private override init() {
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
+        let visible = screen.visibleFrame
+        let frame = CGRect(x: visible.minX + 16, y: visible.maxY - Self.stripHeight - 8,
+                           width: visible.width - 32, height: Self.stripHeight)
+        panel = HistoryPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init()
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.animationBehavior = .utilityWindow
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.delegate = self
+        panel.onEscape = { [weak self] in self?.close() }
         build()
-        window.center()
         observer = NotificationCenter.default.addObserver(forName: HistoryStore.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reload() }
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    func windowWillClose(_ notification: Notification) {
+    private func close() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        panel.orderOut(nil)
         Self.current = nil
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // Close when you click elsewhere, but not while a menu or alert from the strip is open.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.panel.isKeyWindow, NSApp.modalWindow == nil else { return }
+                self.close()
+            }
+        }
     }
 
     // MARK: Layout
 
     private func build() {
-        guard let content = window?.contentView else { return }
-        filter.selectedSegment = 0
-        filter.target = self
-        filter.action = #selector(filterChanged)
-        let clear = NSButton(title: "Clear All…", target: self, action: #selector(clearAll))
-        clear.bezelStyle = .rounded
-        let reveal = NSButton(title: "Show Folder", target: self, action: #selector(showFolder))
-        reveal.bezelStyle = .rounded
-        let top = NSStackView(views: [filter, NSView(), reveal, clear])
-        top.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
+        let background = NSVisualEffectView()
+        background.material = .hudWindow
+        background.state = .active
+        background.blendingMode = .behindWindow
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 16
+        background.layer?.masksToBounds = true
+        panel.contentView = background
+
+        let kinds: [(String, HistoryStore.Kind?)] = [("All", nil), ("Screenshots", .screenshot),
+                                                     ("Recordings", .recording), ("GIFs", .gif)]
+        filterButtons = kinds.map { title, kind in
+            let pill = HistoryFilterPill(title: title)
+            pill.onClick = { [weak self] in
+                self?.filter = kind
+                self?.reload()
+            }
+            return pill
+        }
+        let filters = NSStackView(views: filterButtons)
+        filters.spacing = 4
+
+        let more = HistoryFilterPill(title: "", symbol: "ellipsis")
+        more.onClick = { [weak self, weak more] in
+            guard let self, let more else { return }
+            self.showMoreMenu(from: more)
+        }
 
         let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 190, height: 160)
-        layout.minimumInteritemSpacing = 12
-        layout.minimumLineSpacing = 12
-        layout.sectionInset = NSEdgeInsets(top: 12, left: 16, bottom: 16, right: 16)
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 150, height: 122)
+        layout.minimumLineSpacing = 14
+        layout.sectionInset = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         collection.collectionViewLayout = layout
         collection.isSelectable = true
         collection.dataSource = self
         collection.delegate = self
         collection.backgroundColors = [.clear]
         collection.register(HistoryCell.self, forItemWithIdentifier: HistoryCell.identifier)
-        let scroll = NSScrollView()
+        let scroll = SidewaysScrollView()
         scroll.documentView = collection
-        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
         scroll.drawsBackground = false
+        scroll.verticalScrollElasticity = .none
 
         emptyLabel.textColor = .secondaryLabelColor
         emptyLabel.alignment = .center
 
-        for v in [top, scroll, emptyLabel] {
+        for v in [filters, more, scroll, emptyLabel] {
             v.translatesAutoresizingMaskIntoConstraints = false
-            content.addSubview(v)
+            background.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            top.topAnchor.constraint(equalTo: content.topAnchor),
-            top.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            top.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: top.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            filters.topAnchor.constraint(equalTo: background.topAnchor, constant: 10),
+            filters.centerXAnchor.constraint(equalTo: background.centerXAnchor),
+            more.centerYAnchor.constraint(equalTo: filters.centerYAnchor),
+            more.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -12),
+            scroll.topAnchor.constraint(equalTo: filters.bottomAnchor, constant: 10),
+            scroll.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -6),
             emptyLabel.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: scroll.centerYAnchor)
         ])
@@ -96,8 +143,8 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCol
 
     private func reload() {
         let kinds: [HistoryStore.Kind?] = [nil, .screenshot, .recording, .gif]
-        let kind = kinds[max(filter.selectedSegment, 0)]
-        shown = HistoryStore.shared.items.filter { kind == nil || $0.kind == kind }
+        for (pill, kind) in zip(filterButtons, kinds) { pill.isSelected = kind == filter }
+        shown = HistoryStore.shared.items.filter { filter == nil || $0.kind == filter }
         collection.reloadData()
         if Settings.shared.historyDays == 0 {
             emptyLabel.stringValue = "Capture history is off. Turn it on in Settings → General."
@@ -105,6 +152,24 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCol
             emptyLabel.stringValue = shown.isEmpty ? "No captures yet." : ""
         }
         emptyLabel.isHidden = !shown.isEmpty && Settings.shared.historyDays > 0
+    }
+
+    private func showMoreMenu(from view: NSView) {
+        let menu = NSMenu()
+        let header = NSMenuItem(title: "Keep History", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        for (title, days) in [("Never", 0), ("1 day", 1), ("3 days", 3), ("1 week", 7), ("1 month", 30)] {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                Settings.shared.historyDays = days
+                self?.reload()
+            }
+            item.state = Settings.shared.historyDays == days ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: "Clear History…") { [weak self] in self?.clearAll() })
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: view.bounds.maxY + 4), in: view)
     }
 
     // MARK: Data
@@ -115,7 +180,7 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCol
         let cell = collectionView.makeItem(withIdentifier: HistoryCell.identifier, for: indexPath) as! HistoryCell
         let item = shown[indexPath.item]
         cell.configure(item)
-        cell.onOpen = { [weak self] in self?.restore(item) }
+        cell.onRestore = { [weak self] in self?.restore(item) }
         cell.menuProvider = { [weak self] in self?.menu(for: item) }
         return cell
     }
@@ -127,10 +192,10 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCol
         func add(_ title: String, _ action: @escaping () -> Void) {
             menu.addItem(ClosureMenuItem(title: title, handler: action))
         }
-        add("Show in Quick Access") { [weak self] in self?.restore(item) }
+        add("Restore") { [weak self] in self?.restore(item) }
         if item.kind == .screenshot {
-            add("Open in Annotate") { [weak self] in self?.with(item) { AnnotateWindowController.open($0) } }
-            add("Pin to the Screen") { [weak self] in self?.with(item) { PinWindow.pin($0) } }
+            add("Open in Annotate") { [weak self] in self?.with(item, closing: true) { AnnotateWindowController.open($0) } }
+            add("Pin to the Screen") { [weak self] in self?.with(item, closing: true) { PinWindow.pin($0) } }
         }
         add("Copy") { [weak self] in self?.with(item) { $0.copyToClipboard(); Toast.show("Copied to clipboard") } }
         add("Save to Export Folder") { [weak self] in
@@ -144,96 +209,189 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate, NSCol
         return menu
     }
 
+    /// Puts the capture back on a preview card.
     private func restore(_ item: HistoryStore.Item) {
-        with(item) { PreviewManager.shared.show($0) }
+        with(item, closing: true) { PreviewManager.shared.show($0) }
     }
 
-    private func with(_ item: HistoryStore.Item, _ action: @escaping (Capture) -> Void) {
+    private func with(_ item: HistoryStore.Item, closing: Bool = false, _ action: @escaping (Capture) -> Void) {
         Task {
             guard let capture = await HistoryStore.shared.capture(for: item) else {
                 Toast.show("That file is no longer available")
                 return
             }
+            if closing { close() }
             action(capture)
         }
     }
 
-    @objc private func filterChanged() { reload() }
-
-    @objc private func showFolder() { NSWorkspace.shared.open(HistoryStore.shared.folder) }
-
-    @objc private func clearAll() {
+    private func clearAll() {
         let alert = NSAlert()
         alert.messageText = "Delete all capture history?"
         alert.informativeText = "This removes Snapzy's copies only. Files you saved elsewhere are kept."
         alert.addButton(withTitle: "Delete All")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { HistoryStore.shared.clear() }
+        panel.makeKeyAndOrderFront(nil)
     }
 }
 
-/// One tile: thumbnail, date and type.
+/// Borderless panel that can take key status (for Esc) and reports Esc.
+final class HistoryPanel: NSPanel {
+    var onEscape: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onEscape?() }
+}
+
+/// A vertical mouse wheel scrolls the row sideways.
+final class SidewaysScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        guard abs(event.scrollingDeltaX) < abs(event.scrollingDeltaY),
+              let cgEvent = event.cgEvent?.copy() else {
+            super.scrollWheel(with: event)
+            return
+        }
+        // Swap the axes so up/down moves left/right.
+        cgEvent.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: event.cgEvent?.getDoubleValueField(.scrollWheelEventPointDeltaAxis1) ?? 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: event.cgEvent?.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1) ?? 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        if let swapped = NSEvent(cgEvent: cgEvent) { super.scrollWheel(with: swapped) } else { super.scrollWheel(with: event) }
+    }
+}
+
+/// Small rounded filter tab ("All", "Screenshots"…) or icon button.
+@MainActor
+final class HistoryFilterPill: NSView {
+    var onClick: (() -> Void)?
+    var isSelected = false { didSet { updateLook() } }
+    private let label = NSTextField(labelWithString: "")
+
+    init(title: String, symbol: String? = nil) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 7
+        translatesAutoresizingMaskIntoConstraints = false
+        let content: NSView
+        if let symbol {
+            let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: title) ?? NSImage())
+            icon.contentTintColor = .white
+            content = icon
+        } else {
+            label.stringValue = title
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            content = label
+        }
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 24),
+            content.centerYAnchor.constraint(equalTo: centerYAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
+        ])
+        updateLook()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+
+    private func updateLook() {
+        layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.cgColor : NSColor.white.withAlphaComponent(0.08).cgColor
+        label.textColor = isSelected ? .white : NSColor.white.withAlphaComponent(0.75)
+    }
+}
+
+/// One capture: thumbnail with a type badge, and "10 minutes ago" — or a Restore pill when selected.
 @MainActor
 final class HistoryCell: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("HistoryCell")
-    var onOpen: (() -> Void)?
+    var onRestore: (() -> Void)?
     var menuProvider: (() -> NSMenu?)?
 
     private let thumb = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
+    private let badge = NSImageView()
+    private let timeLabel = NSTextField(labelWithString: "")
+    private var restoreButton: PillLabelButton!
     private var itemID: UUID?
 
     override func loadView() {
         let root = CellView()
-        root.wantsLayer = true
-        root.layer?.cornerRadius = 10
-        root.onDoubleClick = { [weak self] in self?.onOpen?() }
+        root.onDoubleClick = { [weak self] in self?.onRestore?() }
         root.onMenu = { [weak self] in self?.menuProvider?() }
+
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
-        thumb.layer?.cornerRadius = 8
+        thumb.layer?.cornerRadius = 7
         thumb.layer?.masksToBounds = true
-        thumb.layer?.backgroundColor = NSColor.quaternaryLabelColor.cgColor
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        detail.font = .systemFont(ofSize: 11)
-        detail.textColor = .secondaryLabelColor
-        for v in [thumb, titleLabel, detail] {
+        thumb.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        thumb.layer?.borderColor = NSColor.controlAccentColor.cgColor
+
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 9
+        badge.layer?.backgroundColor = NSColor.systemRed.cgColor
+        badge.contentTintColor = .white
+        badge.symbolConfiguration = .init(pointSize: 9, weight: .bold)
+
+        timeLabel.font = .systemFont(ofSize: 11)
+        timeLabel.textColor = NSColor.white.withAlphaComponent(0.6)
+        timeLabel.alignment = .center
+
+        restoreButton = PillLabelButton(title: "Restore", symbol: "arrow.uturn.backward", light: false) { [weak self] in
+            self?.onRestore?()
+        }
+        restoreButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        restoreButton.isHidden = true
+
+        for v in [thumb, badge, timeLabel, restoreButton!] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            thumb.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
-            thumb.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6),
-            thumb.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6),
-            thumb.heightAnchor.constraint(equalToConstant: 112),
-            titleLabel.topAnchor.constraint(equalTo: thumb.bottomAnchor, constant: 6),
-            titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -8),
-            detail.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
-            detail.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8)
+            thumb.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
+            thumb.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
+            thumb.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
+            thumb.heightAnchor.constraint(equalToConstant: 84),
+            badge.widthAnchor.constraint(equalToConstant: 18),
+            badge.heightAnchor.constraint(equalToConstant: 18),
+            badge.trailingAnchor.constraint(equalTo: thumb.trailingAnchor, constant: -5),
+            badge.bottomAnchor.constraint(equalTo: thumb.bottomAnchor, constant: -5),
+            timeLabel.topAnchor.constraint(equalTo: thumb.bottomAnchor, constant: 8),
+            timeLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            restoreButton.centerYAnchor.constraint(equalTo: timeLabel.centerYAnchor),
+            restoreButton.centerXAnchor.constraint(equalTo: root.centerXAnchor)
         ])
         view = root
     }
 
     override var isSelected: Bool {
-        didSet { view.layer?.backgroundColor = isSelected ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.25).cgColor : nil }
+        didSet {
+            thumb.layer?.borderWidth = isSelected ? 2.5 : 0
+            restoreButton.isHidden = !isSelected
+            timeLabel.isHidden = isSelected
+        }
     }
 
     func configure(_ item: HistoryStore.Item) {
         itemID = item.id
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        formatter.doesRelativeDateFormatting = true
-        titleLabel.stringValue = formatter.string(from: item.date)
+        let relative = RelativeDateTimeFormatter()
+        relative.unitsStyle = .full
+        timeLabel.stringValue = relative.localizedString(for: item.date, relativeTo: Date())
+        let (symbol, color): (String, NSColor) = {
+            switch item.kind {
+            case .screenshot: return ("photo", .systemRed)
+            case .recording: return ("video.fill", .systemBlue)
+            case .gif: return ("sparkles", .systemPurple)
+            }
+        }()
+        badge.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.kind.title)
+        badge.layer?.backgroundColor = color.cgColor
         let size = "\(Int(Double(item.pixelWidth) / item.scale)) × \(Int(Double(item.pixelHeight) / item.scale))"
-        switch item.kind {
-        case .screenshot: detail.stringValue = "Screenshot · \(size)"
-        case .recording, .gif:
-            let s = Int(item.duration.rounded())
-            detail.stringValue = "\(item.kind == .gif ? "GIF" : "Recording") · \(String(format: "%d:%02d", s / 60, s % 60))"
-        }
+        view.toolTip = "\(item.kind == .screenshot ? "Screenshot" : item.kind == .gif ? "GIF" : "Recording") · \(size)"
         thumb.image = nil
         HistoryStore.shared.thumbnail(for: item) { [weak self] image in
             guard let self, self.itemID == item.id else { return }

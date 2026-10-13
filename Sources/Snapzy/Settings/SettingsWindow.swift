@@ -182,8 +182,8 @@ final class GeneralPane: SettingsPane {
         row("Recording names", textField(s.recordingNameTemplate) { s.recordingNameTemplate = $0 })
         note("Use {date} and {time} in names, e.g. “Snapzy {date} at {time}”. Press Return to apply.")
         separator()
-        let days = [0, 1, 7, 30]
-        row("Capture history", popup(["Off", "1 day", "1 week", "1 month"], selected: days.firstIndex(of: s.historyDays) ?? 3) {
+        let days = [0, 1, 3, 7, 30]
+        row("Capture history", popup(["Never", "1 day", "3 days", "1 week", "1 month"], selected: days.firstIndex(of: s.historyDays) ?? 4) {
             s.historyDays = days[$0]
         })
         note("Snapzy keeps its own copy of each capture for this long. Open it from Capture History… in the menu.")
