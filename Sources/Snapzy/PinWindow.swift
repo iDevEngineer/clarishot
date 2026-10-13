@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// Keeps a screenshot floating above all other windows.
 /// Hover shows: close (top-left), lock (top-right) and Paste (bottom centre).
 /// While locked the pin can only be closed: no pasting and no moving.
-/// Only the close button (or Esc) closes it, so it can't be closed by accident.
+/// Only the close button closes it, so it can't be closed by accident.
 @MainActor
 final class PinWindow: NSPanel {
     private static var open: [PinWindow] = []
@@ -41,8 +41,9 @@ final class PinWindow: NSPanel {
         contentView = pinView
     }
 
-    override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { closePin() }
+    /// Never take keyboard focus: clicking the pin must leave your text box focused,
+    /// otherwise Paste's ⌘V would land on the pin instead of in your app.
+    override var canBecomeKey: Bool { false }
 
     private func closePin() {
         orderOut(nil)
