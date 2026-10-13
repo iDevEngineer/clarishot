@@ -316,7 +316,7 @@ final class DesktopIconHider {
     func hide() {
         guard !isHiding else { return }
         for screen in NSScreen.screens {
-            guard let url = NSWorkspace.shared.desktopImageURL(for: screen),
+            guard let url = Wallpaper.url(for: screen),
                   let image = NSImage(contentsOf: url) else { continue }
             let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

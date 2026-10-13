@@ -222,7 +222,7 @@ final class RecordingCoordinator {
     @available(macOS 15.0, *)
     private func showControls(for recorder: ScreenRecorder) {
         guard let region, let globalRect else { return }
-        if controlBar == nil {
+        if controlBar == nil, Settings.shared.showControlsWhileRecording {
             let bar = RecordingControlBar()
             bar.onStop = { [weak self] in self?.stop() }
             bar.onPauseToggle = { [weak self] in self?.togglePause() }

@@ -9,6 +9,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var previousAreaItem: NSMenuItem?
     private var menu: NSMenu?
     private var desktopIconsItem: NSMenuItem?
+    /// Menu items whose shortcut comes from Settings.
+    private var actionItems: [(NSMenuItem, ShortcutAction)] = []
     private var recordingTimer: Timer?
     private var onStopRecording: (() -> Void)?
 
@@ -29,15 +31,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.delegate = self
 
         add(menu, "All-In-One", symbol: "1.circle", action: nil)
-        add(menu, "Capture Area", symbol: "viewfinder", action: #selector(captureArea), shortcut: Shortcuts.captureArea)
+        add(menu, "Capture Area", symbol: "viewfinder", action: #selector(captureArea), shortcut: .captureArea)
         previousAreaItem = add(menu, "Capture Previous Area", symbol: "arrow.clockwise",
-                               action: #selector(capturePreviousArea), shortcut: Shortcuts.capturePreviousArea)
-        add(menu, "Capture Fullscreen", symbol: "display", action: #selector(captureFullscreen), shortcut: Shortcuts.captureFullscreen)
-        add(menu, "Capture Window", symbol: "macwindow", action: #selector(captureWindow), shortcut: Shortcuts.captureWindow)
-        add(menu, "Scrolling Capture", symbol: "arrow.down", action: #selector(scrollingCapture), shortcut: Shortcuts.scrollingCapture)
+                               action: #selector(capturePreviousArea), shortcut: .capturePreviousArea)
+        add(menu, "Capture Fullscreen", symbol: "display", action: #selector(captureFullscreen), shortcut: .captureFullscreen)
+        add(menu, "Capture Window", symbol: "macwindow", action: #selector(captureWindow), shortcut: .captureWindow)
+        add(menu, "Scrolling Capture", symbol: "arrow.down", action: #selector(scrollingCapture), shortcut: .scrollingCapture)
         add(menu, "Self-Timer", symbol: "timer", action: nil)
-        add(menu, "Capture Text (OCR)", symbol: "textformat", action: #selector(captureText), shortcut: Shortcuts.captureText)
-        add(menu, "Record Screen", symbol: "video", action: #selector(recordScreen), shortcut: Shortcuts.recordScreen)
+        add(menu, "Capture Text (OCR)", symbol: "textformat", action: #selector(captureText), shortcut: .captureText)
+        add(menu, "Record Screen", symbol: "video", action: #selector(recordScreen), shortcut: .recordScreen)
         menu.addItem(.separator())
         desktopIconsItem = add(menu, "Hide Desktop Icons", symbol: "eye.slash", action: #selector(toggleDesktopIcons))
         menu.addItem(.separator())
@@ -48,7 +50,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add(menu, "About Snapzy", symbol: nil, action: #selector(about))
         menu.addItem(.separator())
-        let settings = add(menu, "Settings...", symbol: nil, action: nil)
+        let settings = add(menu, "Settings...", symbol: nil, action: #selector(openSettings))
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = .command
         menu.addItem(.separator())
@@ -59,11 +61,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// Adds a menu item. Items without an action are shown disabled (not built yet).
     @discardableResult
     private func add(_ menu: NSMenu, _ title: String, symbol: String?, action: Selector?,
-                     shortcut: Shortcut? = nil) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: shortcut?.key ?? "")
+                     shortcut: ShortcutAction? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         item.isEnabled = action != nil
-        if let shortcut { item.keyEquivalentModifierMask = shortcut.modifiers }
+        if let shortcut {
+            actionItems.append((item, shortcut))
+            applyShortcut(to: item, shortcut)
+        }
         if let symbol {
             let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
@@ -73,7 +78,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return item
     }
 
+    private func applyShortcut(to item: NSMenuItem, _ action: ShortcutAction) {
+        let shortcut = Settings.shared.shortcut(for: action)
+        item.keyEquivalent = shortcut?.key ?? ""
+        item.keyEquivalentModifierMask = shortcut?.modifiers ?? []
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
+        for (item, action) in actionItems { applyShortcut(to: item, action) }
         previousAreaItem?.isEnabled = CaptureCoordinator.shared.hasPreviousArea
         let hiding = DesktopIconHider.shared.isHiding
         desktopIconsItem?.title = hiding ? "Show Desktop Icons" : "Hide Desktop Icons"
@@ -91,6 +103,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func recordScreen() { RecordingCoordinator.shared.toggle() }
     @objc private func openImage() { CaptureCoordinator.shared.openImage() }
     @objc private func pinImage() { CaptureCoordinator.shared.pinImageFromFile() }
+
+    @objc private func openSettings() { SettingsWindowController.show() }
 
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
@@ -112,9 +126,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         button.imagePosition = .imageLeading
         button.target = self
         button.action = #selector(stopClicked)
+        let showTime = Settings.shared.showRecordingTimeInMenuBar
         let update = { [weak button] in
             let seconds = Int(elapsed())
-            button?.title = String(format: " %d:%02d", seconds / 60, seconds % 60)
+            button?.title = showTime ? String(format: " %d:%02d", seconds / 60, seconds % 60) : ""
         }
         update()
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in

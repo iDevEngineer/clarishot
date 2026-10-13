@@ -218,7 +218,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         guard let result = document.rendered() else { return }
         do {
             try result.save()
-            Toast.show("Saved to Desktop")
+            Toast.show(Capture.savedMessage)
             window.close()
         } catch {
             NSAlert(error: error).runModal()

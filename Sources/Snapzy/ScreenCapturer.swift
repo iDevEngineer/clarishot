@@ -48,7 +48,7 @@ enum ScreenCapturer {
             let config = SCStreamConfiguration()
             config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
             config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
-            config.showsCursor = false
+            config.showsCursor = Settings.shared.showCursorInScreenshots
             config.captureResolution = .best
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
             shots.append(ScreenShot(screen: screen, image: image))
@@ -66,7 +66,7 @@ enum ScreenCapturer {
         let config = SCStreamConfiguration()
         config.width = Int(filter.contentRect.width * scale)
         config.height = Int(filter.contentRect.height * scale)
-        config.showsCursor = false
+        config.showsCursor = Settings.shared.showCursorInScreenshots
         config.captureResolution = .best
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         return (image, scale)

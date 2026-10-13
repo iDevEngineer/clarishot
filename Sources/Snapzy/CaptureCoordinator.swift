@@ -14,7 +14,7 @@ final class CaptureCoordinator {
     // MARK: Capture modes
 
     func captureArea() {
-        selectArea { capture in PreviewManager.shared.show(capture) }
+        selectArea { [weak self] capture in self?.deliver(capture) }
     }
 
     func captureText() {
@@ -35,7 +35,7 @@ final class CaptureCoordinator {
                 let shots = try await ScreenCapturer.captureAllScreens()
                 let mouse = NSEvent.mouseLocation
                 guard let shot = shots.first(where: { $0.screen.frame.contains(mouse) }) ?? shots.first else { return }
-                PreviewManager.shared.show(Capture(image: shot.image, scale: shot.screen.backingScaleFactor))
+                deliver(Capture(image: shot.image, scale: shot.screen.backingScaleFactor))
             } catch {
                 showCaptureError(error)
             }
@@ -49,7 +49,7 @@ final class CaptureCoordinator {
                 let shots = try await ScreenCapturer.captureAllScreens()
                 guard let shot = shots.first(where: { ScreenCapturer.displayID(for: $0.screen) == lastArea.displayID }),
                       let image = ScreenCapturer.crop(shot, to: lastArea.rect) else { return }
-                PreviewManager.shared.show(Capture(image: image, scale: shot.screen.backingScaleFactor))
+                deliver(Capture(image: image, scale: shot.screen.backingScaleFactor))
             } catch {
                 showCaptureError(error)
             }
@@ -69,6 +69,39 @@ final class CaptureCoordinator {
             } catch {
                 showCaptureError(error)
             }
+        }
+    }
+
+    // MARK: After capture
+
+    /// Runs the after-capture actions from Settings → Screenshots for a finished screenshot.
+    func deliver(_ original: Capture) {
+        let settings = Settings.shared
+        let capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
+        if settings.playSounds { CaptureSound.play() }
+        var acted = false
+        if settings.afterCaptureCopy {
+            capture.copyToClipboard()
+            acted = true
+        }
+        if settings.afterCaptureSave {
+            do {
+                try capture.save()
+                acted = true
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+        if settings.afterCaptureAnnotate {
+            AnnotateWindowController.open(capture)
+            acted = true
+        }
+        if settings.afterCaptureShowPreview || !acted {
+            PreviewManager.shared.show(capture)
+        } else if settings.afterCaptureSave {
+            Toast.show(settings.afterCaptureCopy ? "Copied and saved" : "Saved")
+        } else if settings.afterCaptureCopy {
+            Toast.show("Copied to clipboard")
         }
     }
 
@@ -126,7 +159,7 @@ final class CaptureCoordinator {
         Task {
             do {
                 let (image, scale) = try await ScreenCapturer.captureWindow(id: id)
-                PreviewManager.shared.show(Capture(image: image, scale: scale))
+                deliver(Capture(image: image, scale: scale))
             } catch {
                 showCaptureError(error)
             }

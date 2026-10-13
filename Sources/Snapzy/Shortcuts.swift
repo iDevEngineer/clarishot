@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// A global keyboard shortcut, shown in the menu and registered system-wide.
-struct Shortcut {
+struct Shortcut: Equatable {
     let key: String            // menu key equivalent, e.g. "4"
     let keyCode: UInt32        // Carbon virtual key code
     let modifiers: NSEvent.ModifierFlags
@@ -15,31 +15,87 @@ struct Shortcut {
         if modifiers.contains(.control) { m |= UInt32(controlKey) }
         return m
     }
+
+    /// e.g. "⌥⇧⌘4"
+    var displayString: String {
+        var s = ""
+        if modifiers.contains(.control) { s += "⌃" }
+        if modifiers.contains(.option) { s += "⌥" }
+        if modifiers.contains(.shift) { s += "⇧" }
+        if modifiers.contains(.command) { s += "⌘" }
+        return s + Self.keyName(code: keyCode, fallback: key)
+    }
+
+    static func keyName(code: UInt32, fallback: String) -> String {
+        let names: [Int: String] = [
+            kVK_Space: "Space", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫",
+            kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
+            kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
+            kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12"
+        ]
+        return names[Int(code)] ?? fallback.uppercased()
+    }
 }
 
-/// Default shortcuts. ⌥⇧⌘ avoids clashing with the system's ⇧⌘3/4/5.
-enum Shortcuts {
-    static let captureArea = Shortcut(key: "4", keyCode: UInt32(kVK_ANSI_4), modifiers: [.option, .shift, .command])
-    static let captureFullscreen = Shortcut(key: "3", keyCode: UInt32(kVK_ANSI_3), modifiers: [.option, .shift, .command])
-    static let captureWindow = Shortcut(key: "5", keyCode: UInt32(kVK_ANSI_5), modifiers: [.option, .shift, .command])
-    static let capturePreviousArea = Shortcut(key: "6", keyCode: UInt32(kVK_ANSI_6), modifiers: [.option, .shift, .command])
-    static let recordScreen = Shortcut(key: "r", keyCode: UInt32(kVK_ANSI_R), modifiers: [.option, .shift, .command])
-    static let pauseRecording = Shortcut(key: "p", keyCode: UInt32(kVK_ANSI_P), modifiers: [.option, .shift, .command])
-    static let scrollingCapture = Shortcut(key: "s", keyCode: UInt32(kVK_ANSI_S), modifiers: [.option, .shift, .command])
-    static let captureText = Shortcut(key: "2", keyCode: UInt32(kVK_ANSI_2), modifiers: [.option, .shift, .command])
+/// Everything that can have a global shortcut. ⌥⇧⌘ defaults avoid the system's ⇧⌘3/4/5.
+enum ShortcutAction: String, CaseIterable {
+    case captureArea, capturePreviousArea, captureFullscreen, captureWindow, scrollingCapture, captureText,
+         recordScreen, pauseRecording
+
+    var title: String {
+        switch self {
+        case .captureArea: return "Capture Area"
+        case .capturePreviousArea: return "Capture Previous Area"
+        case .captureFullscreen: return "Capture Fullscreen"
+        case .captureWindow: return "Capture Window"
+        case .scrollingCapture: return "Scrolling Capture"
+        case .captureText: return "Capture Text (OCR)"
+        case .recordScreen: return "Record Screen / Stop Recording"
+        case .pauseRecording: return "Pause / Resume Recording"
+        }
+    }
+
+    var defaultShortcut: Shortcut {
+        let m: NSEvent.ModifierFlags = [.option, .shift, .command]
+        switch self {
+        case .captureArea: return Shortcut(key: "4", keyCode: UInt32(kVK_ANSI_4), modifiers: m)
+        case .capturePreviousArea: return Shortcut(key: "6", keyCode: UInt32(kVK_ANSI_6), modifiers: m)
+        case .captureFullscreen: return Shortcut(key: "3", keyCode: UInt32(kVK_ANSI_3), modifiers: m)
+        case .captureWindow: return Shortcut(key: "5", keyCode: UInt32(kVK_ANSI_5), modifiers: m)
+        case .scrollingCapture: return Shortcut(key: "s", keyCode: UInt32(kVK_ANSI_S), modifiers: m)
+        case .captureText: return Shortcut(key: "2", keyCode: UInt32(kVK_ANSI_2), modifiers: m)
+        case .recordScreen: return Shortcut(key: "r", keyCode: UInt32(kVK_ANSI_R), modifiers: m)
+        case .pauseRecording: return Shortcut(key: "p", keyCode: UInt32(kVK_ANSI_P), modifiers: m)
+        }
+    }
 
     @MainActor
-    static func registerAll() {
+    func perform() {
         let c = CaptureCoordinator.shared
+        switch self {
+        case .captureArea: c.captureArea()
+        case .capturePreviousArea: c.capturePreviousArea()
+        case .captureFullscreen: c.captureFullscreen()
+        case .captureWindow: c.captureWindow()
+        case .scrollingCapture: ScrollCaptureCoordinator.shared.start()
+        case .captureText: c.captureText()
+        case .recordScreen: RecordingCoordinator.shared.toggle()
+        case .pauseRecording: RecordingCoordinator.shared.togglePause()
+        }
+    }
+}
+
+enum Shortcuts {
+    /// (Re)registers every action's current shortcut.
+    @MainActor
+    static func registerAll() {
         let hotkeys = HotkeyCenter.shared
-        hotkeys.register(captureArea) { c.captureArea() }
-        hotkeys.register(captureFullscreen) { c.captureFullscreen() }
-        hotkeys.register(captureWindow) { c.captureWindow() }
-        hotkeys.register(capturePreviousArea) { c.capturePreviousArea() }
-        hotkeys.register(captureText) { c.captureText() }
-        hotkeys.register(scrollingCapture) { ScrollCaptureCoordinator.shared.start() }
-        hotkeys.register(recordScreen) { RecordingCoordinator.shared.toggle() }
-        hotkeys.register(pauseRecording) { RecordingCoordinator.shared.togglePause() }
+        hotkeys.unregisterAll()
+        for action in ShortcutAction.allCases {
+            if let shortcut = Settings.shared.shortcut(for: action) {
+                hotkeys.register(shortcut) { action.perform() }
+            }
+        }
     }
 }
 
@@ -50,11 +106,15 @@ final class HotkeyCenter {
 
     private var handlers: [UInt32: () -> Void] = [:]
     private var refs: [EventHotKeyRef] = []
+    private var nextID: UInt32 = 1
     private var installed = false
+    /// While true (e.g. when recording a new shortcut), presses are ignored.
+    var isSuspended = false
 
     func register(_ shortcut: Shortcut, handler: @escaping () -> Void) {
         installHandlerIfNeeded()
-        let id = UInt32(handlers.count + 1)
+        let id = nextID
+        nextID += 1
         handlers[id] = handler
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: OSType(0x534E_505A), id: id) // "SNPZ"
@@ -63,7 +123,14 @@ final class HotkeyCenter {
         if status == noErr, let ref { refs.append(ref) }
     }
 
+    func unregisterAll() {
+        refs.forEach { UnregisterEventHotKey($0) }
+        refs.removeAll()
+        handlers.removeAll()
+    }
+
     fileprivate func fire(_ id: UInt32) {
+        guard !isSuspended else { return }
         handlers[id]?()
     }
 

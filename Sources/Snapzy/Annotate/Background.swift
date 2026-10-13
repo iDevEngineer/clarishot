@@ -58,17 +58,27 @@ enum BackgroundFill {
     }
 }
 
-/// The current desktop picture, loaded once.
+/// The wallpaper picture: the custom one from Settings, else the desktop picture.
 @MainActor
 enum Wallpaper {
-    static let image: CGImage? = {
-        guard let screen = NSScreen.main,
-              let url = NSWorkspace.shared.desktopImageURL(for: screen),
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    private static var cache: (url: URL, image: CGImage)?
+
+    static func url(for screen: NSScreen? = NSScreen.main) -> URL? {
+        if let custom = Settings.shared.customWallpaper { return custom }
+        guard let screen else { return nil }
+        return NSWorkspace.shared.desktopImageURL(for: screen)
+    }
+
+    static var image: CGImage? {
+        guard let url = url() else { return nil }
+        if let cache, cache.url == url { return cache.image }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                        kCGImageSourceThumbnailMaxPixelSize: 2400] as CFDictionary
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
-    }()
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+        cache = (url, image)
+        return image
+    }
 }
 
 struct BackgroundStyle {

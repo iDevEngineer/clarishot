@@ -1,6 +1,6 @@
 import AppKit
 
-/// Stacks the floating preview cards in the bottom-left corner of the screen.
+/// Stacks the floating preview cards in a corner of the screen (see Settings → Quick Access).
 @MainActor
 final class PreviewManager {
     static let shared = PreviewManager()
@@ -17,6 +17,13 @@ final class PreviewManager {
         }
         panels.insert(panel, at: 0)
         layout(animatedNew: panel)
+        let seconds = Settings.shared.previewAutoClose
+        if seconds > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds)) { [weak self, weak panel] in
+                guard let self, let panel, self.panels.contains(where: { $0 === panel }) else { return }
+                self.remove(panel)
+            }
+        }
     }
 
     private func remove(_ panel: PreviewPanel) {
@@ -25,22 +32,31 @@ final class PreviewManager {
     }
 
     private func layout(animatedNew newPanel: PreviewPanel?) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let settings = Settings.shared
+        let mouse = NSEvent.mouseLocation
+        let active = settings.previewOnActiveScreen ? NSScreen.screens.first { $0.frame.contains(mouse) } : nil
+        guard let screen = active ?? NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        var y = visible.minY + edgeInset
+        let position = settings.previewPosition
+        let fromTop = position == .topLeft || position == .topRight
+        let onRight = position == .bottomRight || position == .topRight
+        var offset = edgeInset
         for panel in panels {
             let margin = PreviewPanel.shadowMargin
-            let origin = CGPoint(x: visible.minX + edgeInset - margin, y: y - margin)
+            let cardSize = CGSize(width: panel.frame.width - 2 * margin, height: panel.frame.height - 2 * margin)
+            let x = onRight ? visible.maxX - edgeInset - cardSize.width : visible.minX + edgeInset
+            let y = fromTop ? visible.maxY - offset - cardSize.height : visible.minY + offset
+            let origin = CGPoint(x: x - margin, y: y - margin)
             let frame = CGRect(origin: origin, size: panel.frame.size)
             if panel === newPanel {
-                panel.slideIn(to: frame)
+                panel.slideIn(to: frame, fromRight: onRight)
             } else {
                 NSAnimationContext.runAnimationGroup { ctx in
                     ctx.duration = 0.2
                     panel.animator().setFrame(frame, display: true)
                 }
             }
-            y += panel.frame.height - 2 * margin + spacing
+            offset += cardSize.height + spacing
         }
     }
 }
@@ -73,8 +89,11 @@ final class PreviewPanel: NSPanel {
         card.onDismiss = { [weak self] in self?.onDismiss?() }
     }
 
-    func slideIn(to frame: CGRect) {
-        setFrame(frame.offsetBy(dx: -frame.width, dy: 0), display: false)
+    private var slidesRight = false
+
+    func slideIn(to frame: CGRect, fromRight: Bool = false) {
+        slidesRight = fromRight
+        setFrame(frame.offsetBy(dx: fromRight ? frame.width : -frame.width, dy: 0), display: false)
         alphaValue = 0
         orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -86,7 +105,7 @@ final class PreviewPanel: NSPanel {
     }
 
     func slideOut(completion: @escaping () -> Void) {
-        let target = frame.offsetBy(dx: -frame.width, dy: 0)
+        let target = frame.offsetBy(dx: slidesRight ? frame.width : -frame.width, dy: 0)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -241,7 +260,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
     private func save() {
         do {
             try capture.save()
-            Toast.show("Saved to Desktop")
+            Toast.show(Capture.savedMessage)
             onDismiss?()
         } catch {
             NSAlert(error: error).runModal()
@@ -285,7 +304,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         dragging = false
-        if !operation.isEmpty { onDismiss?() }
+        if !operation.isEmpty, Settings.shared.closePreviewAfterDragging { onDismiss?() }
     }
 }
 

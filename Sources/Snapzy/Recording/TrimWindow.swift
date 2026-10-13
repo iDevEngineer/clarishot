@@ -70,9 +70,9 @@ final class TrimWindowController: NSObject, NSWindowDelegate {
                     let destination = Capture.saveDirectory.appendingPathComponent("\(name).gif")
                     try? FileManager.default.removeItem(at: destination)
                     try FileManager.default.moveItem(at: gif, to: destination)
-                    Toast.show("Trimmed GIF saved to Desktop")
+                    Toast.show("Trimmed GIF saved to \(Capture.saveDirectory.lastPathComponent)")
                 } else {
-                    Toast.show("Trimmed recording saved to Desktop")
+                    Toast.show("Trimmed recording saved to \(Capture.saveDirectory.lastPathComponent)")
                 }
             } catch {
                 NSAlert(error: error).runModal()

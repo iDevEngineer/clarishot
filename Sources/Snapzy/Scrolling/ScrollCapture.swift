@@ -89,7 +89,7 @@ final class ScrollCaptureCoordinator {
             let image = await session.finish()
             cleanUp()
             guard let image else { Toast.show("Nothing was captured"); return }
-            PreviewManager.shared.show(Capture(image: image, scale: screen.backingScaleFactor))
+            CaptureCoordinator.shared.deliver(Capture(image: image, scale: screen.backingScaleFactor))
         }
     }
 
