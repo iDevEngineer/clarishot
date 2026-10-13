@@ -338,8 +338,10 @@ final class RecordingCoordinator {
                 guard let gif = await Self.makeGIF(from: url) else { return }
                 fileURL = gif
             }
-            PreviewManager.shared.show(Capture(videoURL: fileURL, thumbnail: thumbnail, scale: 1, duration: duration,
-                                               sourceVideoURL: format == .gif ? url : nil))
+            let capture = Capture(videoURL: fileURL, thumbnail: thumbnail, scale: 1, duration: duration,
+                                  sourceVideoURL: format == .gif ? url : nil)
+            HistoryStore.shared.add(capture)
+            PreviewManager.shared.show(capture)
         }
     }
 

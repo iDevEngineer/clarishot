@@ -7,6 +7,15 @@ final class PreviewManager {
     static let shared = PreviewManager()
 
     private var panels: [PreviewPanel] = []
+    /// Most recently closed captures, newest last, for "Restore Recently Closed".
+    private var recentlyClosed: [Capture] = []
+
+    var canRestore: Bool { !recentlyClosed.isEmpty }
+
+    func restoreRecentlyClosed() {
+        guard let capture = recentlyClosed.popLast() else { return }
+        show(capture)
+    }
     private let edgeInset: CGFloat = 20
     private let spacing: CGFloat = 12
 
@@ -29,6 +38,8 @@ final class PreviewManager {
 
     private func remove(_ panel: PreviewPanel) {
         panels.removeAll { $0 === panel }
+        recentlyClosed.append(panel.capture)
+        if recentlyClosed.count > 10 { recentlyClosed.removeFirst() }
         panel.slideOut { [weak self] in self?.layout(animatedNew: nil) }
     }
 
@@ -68,7 +79,10 @@ final class PreviewPanel: NSPanel {
     static let shadowMargin: CGFloat = 24
     var onDismiss: (() -> Void)?
 
+    let capture: Capture
+
     init(capture: Capture) {
+        self.capture = capture
         let card = PreviewCardView(capture: capture)
         let m = Self.shadowMargin
         let size = CGSize(width: card.frame.width + 2 * m, height: card.frame.height + 2 * m)

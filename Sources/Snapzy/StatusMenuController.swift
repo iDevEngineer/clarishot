@@ -9,6 +9,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var previousAreaItem: NSMenuItem?
     private var menu: NSMenu?
     private var desktopIconsItem: NSMenuItem?
+    private var restoreItem: NSMenuItem?
     /// Menu items whose shortcut comes from Settings.
     private var actionItems: [(NSMenuItem, ShortcutAction)] = []
     private var recordingTimer: Timer?
@@ -46,7 +47,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         add(menu, "Open...", symbol: "pencil", action: #selector(openImage))
         add(menu, "Pin to the Screen...", symbol: "pin", action: #selector(pinImage))
         menu.addItem(.separator())
-        add(menu, "Capture History...", symbol: "clock.arrow.circlepath", action: nil)
+        add(menu, "Capture History...", symbol: "clock.arrow.circlepath", action: #selector(openHistory))
+        restoreItem = add(menu, "Restore Recently Closed", symbol: "arrow.uturn.backward", action: #selector(restoreClosed))
         menu.addItem(.separator())
         add(menu, "About Snapzy", symbol: nil, action: #selector(about))
         menu.addItem(.separator())
@@ -86,6 +88,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         for (item, action) in actionItems { applyShortcut(to: item, action) }
+        restoreItem?.isEnabled = PreviewManager.shared.canRestore
         previousAreaItem?.isEnabled = CaptureCoordinator.shared.hasPreviousArea
         let hiding = DesktopIconHider.shared.isHiding
         desktopIconsItem?.title = hiding ? "Show Desktop Icons" : "Hide Desktop Icons"
@@ -104,6 +107,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func openImage() { CaptureCoordinator.shared.openImage() }
     @objc private func pinImage() { CaptureCoordinator.shared.pinImageFromFile() }
 
+    @objc private func openHistory() { HistoryWindowController.show() }
+    @objc private func restoreClosed() { PreviewManager.shared.restoreRecentlyClosed() }
     @objc private func openSettings() { SettingsWindowController.show() }
 
     @objc private func about() {

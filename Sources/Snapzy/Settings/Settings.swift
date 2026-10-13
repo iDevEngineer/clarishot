@@ -139,6 +139,14 @@ final class Settings {
         set { set(newValue, "recordingTimeInMenuBar") }
     }
 
+    // MARK: History
+
+    /// Days of capture history to keep; 0 = off.
+    var historyDays: Int {
+        get { defaults.object(forKey: "historyDays") as? Int ?? 30 }
+        set { set(newValue, "historyDays"); HistoryStore.shared.prune() }
+    }
+
     var showControlsWhileRecording: Bool {
         get { bool("controlsWhileRecording", default: true) }
         set { set(newValue, "controlsWhileRecording") }
@@ -192,7 +200,7 @@ final class Settings {
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",
-                    "customWallpaper", "shortcuts"] {
+                    "customWallpaper", "shortcuts", "historyDays"] {
             defaults.removeObject(forKey: key)
         }
         notify()

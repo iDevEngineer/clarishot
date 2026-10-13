@@ -79,6 +79,7 @@ final class CaptureCoordinator {
         let settings = Settings.shared
         let capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
         if settings.playSounds { CaptureSound.play() }
+        HistoryStore.shared.add(capture)
         var acted = false
         if settings.afterCaptureCopy {
             capture.copyToClipboard()
