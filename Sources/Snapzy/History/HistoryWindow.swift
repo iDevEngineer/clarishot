@@ -43,7 +43,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
     private let emptyLabel = NSTextField(labelWithString: "")
     private var shown: [HistoryStore.Item] = []
     private var observer: NSObjectProtocol?
-    private static let stripHeight: CGFloat = 216
+    private static let stripHeight: CGFloat = 234
 
     private override init() {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
@@ -128,8 +128,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
 
         let layout = NSCollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
-        layout.itemSize = CGSize(width: 196, height: 158)
-        layout.minimumLineSpacing = 16
+        layout.itemSize = CGSize(width: 196, height: 176)
+        layout.minimumLineSpacing = 32
         layout.sectionInset = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         collection.collectionViewLayout = layout
         collection.isSelectable = false
@@ -365,7 +365,7 @@ final class HistoryCell: NSCollectionViewItem {
         badge.contentTintColor = .white
         badge.symbolConfiguration = .init(pointSize: 9, weight: .bold)
 
-        timeLabel.font = .systemFont(ofSize: 11)
+        timeLabel.font = .systemFont(ofSize: 13)
         timeLabel.textColor = NSColor.white.withAlphaComponent(0.6)
         timeLabel.alignment = .center
 
@@ -383,7 +383,7 @@ final class HistoryCell: NSCollectionViewItem {
             thumb.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
             thumb.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             thumb.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
-            thumb.heightAnchor.constraint(equalToConstant: 112),
+            thumb.heightAnchor.constraint(equalToConstant: 128),
             badge.widthAnchor.constraint(equalToConstant: 22),
             badge.heightAnchor.constraint(equalToConstant: 22),
             badge.trailingAnchor.constraint(equalTo: thumb.trailingAnchor, constant: -5),
