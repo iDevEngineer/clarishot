@@ -66,6 +66,23 @@ final class CaptureCoordinator {
         }
     }
 
+    /// The scrolling-capture selection: dimmed screen, adjustable area, Start Capture pill.
+    func selectScrollingArea(then handle: @escaping (ScreenShot, CGRect) -> Void) {
+        guard overlay == nil else { return }
+        Task {
+            do {
+                let shots = try await ScreenCapturer.captureAllScreens()
+                present(shots, mode: .scrollArea, targets: [],
+                        hint: "Drag to capture the scrolling part of the screen.") { result in
+                    guard case let .allInOne(shot, rect, _)? = result else { return }
+                    handle(shot, rect)
+                }
+            } catch {
+                showCaptureError(error)
+            }
+        }
+    }
+
     /// Pick an area, wait (Settings → Screenshots), then capture what's there at that moment.
     func selfTimer() {
         selectRegion(hint: "Drag an area — Snapzy will capture it after \(Settings.shared.selfTimerSeconds) seconds.") { [weak self] shot, rect in

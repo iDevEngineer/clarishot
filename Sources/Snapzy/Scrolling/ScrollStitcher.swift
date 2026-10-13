@@ -6,15 +6,20 @@ import Foundation
 /// Each frame is reduced to a "signature": one grey value per row (sampled
 /// across a few columns) for vertical scrolling, or per column for horizontal.
 /// The scroll distance is the shift that best lines up the new frame's
-/// signature with the previous one; the newly revealed strip is then appended.
-/// Not thread-safe: use from one queue.
+/// signature with the previous one. Scrolling works both ways: the stitcher
+/// tracks where the current frame sits in the image, adds new content at the
+/// end (or at the start, if you scroll above where you began), and ignores
+/// content it already has. Not thread-safe: use from one queue.
 final class ScrollStitcher {
     enum Axis { case vertical, horizontal }
 
     enum Outcome {
+        /// New content was added (at the end or the start).
         case appended(pixels: Int)
+        /// The view moved over content already captured (e.g. scrolling back up).
+        case moved
         case noMovement
-        /// Frames didn't line up (scrolling too fast, upwards, or diagonally).
+        /// Frames didn't line up (scrolling too fast or diagonally).
         case lost
         case limitReached
     }
@@ -24,10 +29,15 @@ final class ScrollStitcher {
     let frameWidth: Int
     let frameHeight: Int
     private(set) var axis: Axis?
+    /// Total size along the scroll direction, in pixels.
     private(set) var length: Int
 
     private let first: CGImage
-    private var strips: [CGImage] = []
+    /// Pieces before and after the first frame, in on-screen order.
+    private var before: [CGImage] = []
+    private var after: [CGImage] = []
+    /// Where the reference frame starts within the stitched image.
+    private var position = 0
     private var reference: CGImage
     private var referenceSignatures: [Axis: Signature] = [:]
     private let samples = 48
@@ -44,11 +54,12 @@ final class ScrollStitcher {
         axis == .horizontal ? (length, frameHeight) : (frameWidth, length)
     }
 
+    private var frameLength: Int { axis == .horizontal ? frameWidth : frameHeight }
+
     // MARK: Adding frames
 
     func add(_ frame: CGImage) -> Outcome {
         guard frame.width == frameWidth, frame.height == frameHeight else { return .lost }
-        if length >= Self.maxLength { return .limitReached }
 
         let axes: [Axis] = axis.map { [$0] } ?? [.vertical, .horizontal]
         var best: (axis: Axis, offset: Int, score: Double, still: Double)?
@@ -56,7 +67,7 @@ final class ScrollStitcher {
             let old = signature(of: reference, axis: a, cacheAsReference: true)
             let new = signature(of: frame, axis: a, cacheAsReference: false)
             let (offset, score, still) = Self.bestOffset(old: old, new: new)
-            if best == nil || (offset > 0 && (best!.offset == 0 || score < best!.score)) {
+            if best == nil || (offset != 0 && (best!.offset == 0 || score < best!.score)) {
                 best = (a, offset, score, still)
             }
         }
@@ -65,19 +76,41 @@ final class ScrollStitcher {
         // Nothing moved: the frame matches the reference without shifting.
         if match.still < 1.5 { return .noMovement }
         // A good match must be close and clearly better than "no shift".
-        guard match.offset > 0, match.score < 8, match.score < match.still * 0.5 else { return .lost }
+        guard match.offset != 0, match.score < 8, match.score < match.still * 0.5 else { return .lost }
 
         if axis == nil {
             axis = match.axis
-            length = match.axis == .vertical ? frameHeight : frameWidth
+            length = frameLength
         }
-        let offset = min(match.offset, Self.maxLength - length)
-        guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: offset) else { return .lost }
-        strips.append(strip)
-        length += offset
+        var newPosition = position + match.offset
+        var added = 0
+
+        // Scrolled above where we started: add the newly revealed start.
+        if newPosition < 0 {
+            let extra = min(-newPosition, Self.maxLength - length)
+            guard extra > 0 else { return .limitReached }
+            guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: extra, fromStart: true) else { return .lost }
+            before.insert(strip, at: 0)
+            length += extra
+            added += extra
+            newPosition = 0
+        }
+
+        // Scrolled past the end: add the newly revealed end.
+        let end = newPosition + frameLength
+        if end > length {
+            let extra = min(end - length, Self.maxLength - length)
+            guard extra > 0 else { return .limitReached }
+            guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: extra, fromStart: false) else { return .lost }
+            after.append(strip)
+            length += extra
+            added += extra
+        }
+
+        position = newPosition
         reference = frame
         referenceSignatures = [:]
-        return .appended(pixels: offset)
+        return added > 0 ? .appended(pixels: added) : .moved
     }
 
     // MARK: Output
@@ -106,13 +139,12 @@ final class ScrollStitcher {
 
         // Place pieces from the start (top or left). CG's origin is bottom-left.
         var cursor = 0
-        for (index, piece) in ([first] + strips).enumerated() {
+        for piece in before + [first] + after {
             if axis == .horizontal {
                 ctx.draw(piece, in: CGRect(x: cursor, y: 0, width: piece.width, height: piece.height))
-                cursor += index == 0 ? first.width : piece.width
+                cursor += piece.width
             } else {
-                let y = h - cursor - piece.height
-                ctx.draw(piece, in: CGRect(x: 0, y: y, width: piece.width, height: piece.height))
+                ctx.draw(piece, in: CGRect(x: 0, y: h - cursor - piece.height, width: piece.width, height: piece.height))
                 cursor += piece.height
             }
         }
@@ -155,8 +187,9 @@ final class ScrollStitcher {
         return result
     }
 
-    /// Finds how far the content moved toward the start (up or left).
-    /// Returns the best shift, its average difference, and the difference with no shift.
+    /// Finds how far the content moved: positive = toward the end (scrolling down/right),
+    /// negative = back toward the start. Returns the best shift, its average difference,
+    /// and the difference with no shift.
     private static func bestOffset(old: Signature, new: Signature) -> (offset: Int, score: Double, still: Double) {
         let lines = old.lines, n = old.samples
         let maxShift = Int(Double(lines) * 0.85)
@@ -167,12 +200,12 @@ final class ScrollStitcher {
 
         old.values.withUnsafeBufferPointer { o in
             new.values.withUnsafeBufferPointer { m in
-                for shift in 0...maxShift {
+                for shift in -maxShift...maxShift {
                     var total: Float = 0
                     var count = 0
-                    var line = 0
                     // new line `line` should equal old line `line + shift`.
-                    while line + shift < lines {
+                    var line = max(0, -shift)
+                    while line < lines, line + shift < lines {
                         let a = (line + shift) * n, b = line * n
                         for s in 0..<n { total += abs(o[a + s] - m[b + s]) }
                         count += n
@@ -180,7 +213,8 @@ final class ScrollStitcher {
                     }
                     let score = count > 0 ? Double(total) / Double(count) : .greatestFiniteMagnitude
                     if shift == 0 { still = score; continue }
-                    if score < bestScore - 0.01 {
+                    // Prefer the smaller move when two shifts score the same.
+                    if score < bestScore - 0.01 || (abs(score - bestScore) <= 0.01 && abs(shift) < abs(bestOffset)) {
                         bestScore = score
                         bestOffset = shift
                     }
@@ -190,12 +224,15 @@ final class ScrollStitcher {
         return (bestOffset, bestScore, still)
     }
 
-    /// Copies the newly revealed end of a frame (bottom rows or right columns).
-    private static func copyStrip(of frame: CGImage, axis: Axis, length: Int) -> CGImage? {
+    /// Copies the first or last `length` lines of a frame (rows, or columns when horizontal).
+    private static func copyStrip(of frame: CGImage, axis: Axis, length: Int, fromStart: Bool) -> CGImage? {
         guard length > 0 else { return nil }
-        let rect = axis == .vertical
-            ? CGRect(x: 0, y: frame.height - length, width: frame.width, height: length)
-            : CGRect(x: frame.width - length, y: 0, width: length, height: frame.height)
+        let rect: CGRect
+        if axis == .vertical {
+            rect = CGRect(x: 0, y: fromStart ? 0 : frame.height - length, width: frame.width, height: length)
+        } else {
+            rect = CGRect(x: fromStart ? 0 : frame.width - length, y: 0, width: length, height: frame.height)
+        }
         guard let cropped = frame.cropping(to: rect) else { return nil }
         // Copy so the full frame's memory can be released.
         let space = frame.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!

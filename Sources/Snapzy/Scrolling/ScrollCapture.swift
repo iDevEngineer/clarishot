@@ -5,21 +5,25 @@ import ScreenCaptureKit
 
 /// Runs a scrolling capture: pick the scrolling part of the screen, scroll
 /// (by hand or with Auto-Scroll) while a live preview builds, then Done.
+
 @MainActor
 final class ScrollCaptureCoordinator {
     static let shared = ScrollCaptureCoordinator()
 
     private var session: ScrollCaptureSession?
-    private var panel: ScrollCapturePanel?
-    private var outline: RegionOutlineWindow?
+    private var dim: ScrollDimWindow?
+    private var preview: ScrollPreviewPanel?
+    private var controls: ScrollControlsPanel?
+    private var autoPill: ScrollAutoPill?
     private var autoScroller: AutoScroller?
     private var screen: NSScreen?
     private var globalRect: CGRect = .zero
     private var axis: ScrollStitcher.Axis?
 
+    /// Pick the scrolling part of the screen (adjustable), then press Start Capture.
     func start() {
         guard session == nil else { return }
-        CaptureCoordinator.shared.selectRegion(hint: "Drag to capture the scrolling part of the screen.") { [weak self] shot, rect in
+        CaptureCoordinator.shared.selectScrollingArea { [weak self] shot, rect in
             self?.begin(screen: shot.screen, rect: rect)
         }
     }
@@ -30,18 +34,28 @@ final class ScrollCaptureCoordinator {
         self.screen = screen
         globalRect = rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
 
-        let outline = RegionOutlineWindow(rect: globalRect)
-        outline.orderFrontRegardless()
-        self.outline = outline
+        // Dim everything except the area. It ignores the mouse, so you scroll the app underneath.
+        let dim = ScrollDimWindow(screen: screen, hole: globalRect)
+        dim.orderFrontRegardless()
+        self.dim = dim
 
-        let panel = ScrollCapturePanel()
-        panel.onDone = { [weak self] in self?.done() }
-        panel.onCancel = { [weak self] in self?.cancel() }
-        panel.onAutoScroll = { [weak self] in self?.toggleAutoScroll() }
-        panel.place(beside: globalRect, on: screen)
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-        self.panel = panel
+        let preview = ScrollPreviewPanel()
+        preview.anchor(to: globalRect, on: screen)
+        self.preview = preview
+
+        let controls = ScrollControlsPanel()
+        controls.onDone = { [weak self] in self?.done() }
+        controls.onCancel = { [weak self] in self?.cancel() }
+        controls.place(below: globalRect, on: screen)
+        controls.orderFrontRegardless()
+        controls.makeKey() // for Return / Esc, without taking focus from the app you scroll
+        self.controls = controls
+
+        let pill = ScrollAutoPill()
+        pill.onToggle = { [weak self] in self?.toggleAutoScroll() }
+        pill.place(insideBottomOf: globalRect)
+        pill.orderFrontRegardless()
+        autoPill = pill
 
         let session = ScrollCaptureSession()
         session.onUpdate = { [weak self] update in self?.handle(update) }
@@ -57,7 +71,7 @@ final class ScrollCaptureCoordinator {
     }
 
     private func handle(_ update: ScrollCaptureSession.Update) {
-        panel?.show(update)
+        preview?.show(update)
         axis = update.axis ?? axis
         if update.status == .capturing { autoScroller?.noteMovement() }
         if update.status == .limitReached { autoScroller?.stop() }
@@ -67,7 +81,7 @@ final class ScrollCaptureCoordinator {
         if let scroller = autoScroller {
             scroller.stop()
             autoScroller = nil
-            panel?.setAutoScrolling(false)
+            autoPill?.setActive(false)
             return
         }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -79,14 +93,14 @@ final class ScrollCaptureCoordinator {
         scroller.onReachedEnd = { [weak self] in self?.done() }
         scroller.start(at: CGPoint(x: globalRect.midX, y: globalRect.midY), horizontal: axis == .horizontal)
         autoScroller = scroller
-        panel?.setAutoScrolling(true)
+        autoPill?.setActive(true)
     }
 
     private func done() {
         guard let session, let screen else { return }
         autoScroller?.stop()
         autoScroller = nil
-        panel?.setBusy()
+        controls?.setBusy()
         Task {
             let image = await session.finish()
             cleanUp()
@@ -105,10 +119,11 @@ final class ScrollCaptureCoordinator {
 
     private func cleanUp() {
         session = nil
-        panel?.orderOut(nil)
-        panel = nil
-        outline?.orderOut(nil)
-        outline = nil
+        for window in [dim, preview, controls, autoPill] as [NSWindow?] { window?.orderOut(nil) }
+        dim = nil
+        preview = nil
+        controls = nil
+        autoPill = nil
         screen = nil
         axis = nil
     }
@@ -186,7 +201,7 @@ final class ScrollCaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, @u
             return
         }
         switch stitcher.add(frame) {
-        case .appended: post(.capturing)
+        case .appended, .moved: post(.capturing)
         case .noMovement: break
         case .lost: if lastStatus != .lost { post(.lost) }
         case .limitReached: if lastStatus != .limitReached { post(.limitReached) }
@@ -254,134 +269,147 @@ final class AutoScroller {
     }
 }
 
-// MARK: - Panel
+// MARK: - On-screen pieces
 
-/// Dark panel beside the area: live preview, size, tips, Auto-Scroll, Cancel, Done.
-/// Return finishes, Esc cancels.
+/// Darkens the screen around the area with a thin white frame. Click-through.
 @MainActor
-final class ScrollCapturePanel: NSPanel {
-    var onDone: (() -> Void)?
-    var onCancel: (() -> Void)?
-    var onAutoScroll: (() -> Void)?
+final class ScrollDimWindow: NSWindow {
+    init(screen: NSScreen, hole: CGRect) {
+        super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        level = .floating
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        let local = hole.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+        contentView = DimView(frame: CGRect(origin: .zero, size: screen.frame.size), hole: local)
+        setFrame(screen.frame, display: false)
+    }
 
-    private let sizeLabel = NSTextField(labelWithString: "")
-    private let preview = NSImageView()
-    private let statusLabel = NSTextField(wrappingLabelWithString: "")
-    private let autoButton = NSButton(title: "Auto-Scroll", target: nil, action: nil)
-    private let doneButton = NSButton(title: "Done", target: nil, action: nil)
-    private static let width: CGFloat = 248
+    private final class DimView: NSView {
+        let hole: CGRect
+        init(frame: CGRect, hole: CGRect) {
+            self.hole = hole
+            super.init(frame: frame)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+            let path = CGMutablePath()
+            path.addRect(bounds)
+            path.addRect(hole)
+            ctx.addPath(path)
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.4).cgColor)
+            ctx.fillPath(using: .evenOdd)
+            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.85).cgColor)
+            ctx.setLineWidth(1)
+            ctx.stroke(hole.insetBy(dx: -0.5, dy: -0.5))
+        }
+    }
+}
+
+/// The stitched image so far, beside the area (left if there's room), bottom-aligned
+/// with it and growing upward as you scroll. Turns orange if frames stop lining up.
+@MainActor
+final class ScrollPreviewPanel: NSPanel {
+    private let imageView = NSImageView()
+    private var area: CGRect = .zero
+    private var visibleArea: CGRect = .zero
+    private static let maxWidth: CGFloat = 220
 
     init() {
-        super.init(contentRect: CGRect(x: 0, y: 0, width: Self.width, height: 420),
+        super.init(contentRect: CGRect(x: 0, y: 0, width: 10, height: 10),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
-        level = .screenSaver
+        animationBehavior = .none
+        level = .floating
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
+        ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        appearance = NSAppearance(named: .darkAqua)
-        build()
-        show(.init(status: .waiting, preview: nil, pixelSize: (0, 0), axis: nil))
+        imageView.imageScaling = .scaleAxesIndependently
+        imageView.wantsLayer = true
+        imageView.layer?.backgroundColor = NSColor.white.cgColor
+        imageView.layer?.cornerRadius = 4
+        imageView.layer?.masksToBounds = true
+        imageView.layer?.borderWidth = 0
+        contentView = imageView
+    }
+
+    func anchor(to area: CGRect, on screen: NSScreen) {
+        self.area = area
+        visibleArea = screen.visibleFrame
+    }
+
+    func show(_ update: ScrollCaptureSession.Update) {
+        guard let image = update.preview else { return }
+        // Fit inside a box beside the area: up to 220 wide and most of the screen tall.
+        let maxHeight = visibleArea.height - 40
+        let fit = min(Self.maxWidth / CGFloat(image.width), maxHeight / CGFloat(image.height))
+        let size = CGSize(width: (CGFloat(image.width) * fit).rounded(), height: (CGFloat(image.height) * fit).rounded())
+        imageView.image = NSImage(cgImage: image, size: size)
+
+        var x = area.minX - size.width - 16
+        if x < visibleArea.minX + 8 { x = area.maxX + 16 }
+        if x + size.width > visibleArea.maxX - 8 { x = area.minX + 8 }
+        var y = area.minY
+        if y + size.height > visibleArea.maxY - 8 { y = visibleArea.maxY - 8 - size.height }
+        y = max(y, visibleArea.minY + 8)
+        setFrame(CGRect(x: x, y: y, width: size.width, height: size.height), display: true)
+
+        let lost = update.status == .lost
+        imageView.layer?.borderWidth = lost ? 3 : 0
+        imageView.layer?.borderColor = NSColor.systemOrange.cgColor
+        imageView.toolTip = lost ? "Lost track — scroll back a little and go slower" : nil
+        if !isVisible { orderFrontRegardless() }
+    }
+}
+
+/// Cancel and Done pills under the area. Return finishes, Esc cancels.
+@MainActor
+final class ScrollControlsPanel: NSPanel {
+    var onDone: (() -> Void)?
+    var onCancel: (() -> Void)?
+    private var doneButton: PillLabelButton!
+
+    init() {
+        super.init(contentRect: CGRect(x: 0, y: 0, width: 200, height: 36),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        level = .floating
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let cancel = PillLabelButton(title: "Cancel", symbol: "xmark", light: false) { [weak self] in self?.onCancel?() }
+        doneButton = PillLabelButton(title: "Done", symbol: "checkmark", light: true) { [weak self] in self?.onDone?() }
+        let stack = NSStackView(views: [cancel, doneButton])
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        contentView = stack
+        setContentSize(stack.fittingSize)
     }
 
     override var canBecomeKey: Bool { true }
 
-    private func build() {
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 16
-        background.layer?.masksToBounds = true
-
-        let title = NSTextField(labelWithString: "Scrolling Capture")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        sizeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        sizeLabel.textColor = .secondaryLabelColor
-        let header = NSStackView(views: [title, NSView(), sizeLabel])
-
-        preview.imageScaling = .scaleProportionallyDown
-        preview.imageAlignment = .alignBottom
-        preview.wantsLayer = true
-        preview.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
-        preview.layer?.cornerRadius = 8
-        preview.translatesAutoresizingMaskIntoConstraints = false
-        preview.heightAnchor.constraint(equalToConstant: 280).isActive = true
-
-        statusLabel.font = .systemFont(ofSize: 12)
-        statusLabel.textColor = .secondaryLabelColor
-
-        autoButton.target = self
-        autoButton.action = #selector(autoScroll)
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel))
-        doneButton.target = self
-        doneButton.action = #selector(done)
-        doneButton.bezelColor = .controlAccentColor
-        for b in [autoButton, cancel, doneButton] { b.bezelStyle = .rounded; b.controlSize = .regular }
-        let buttons = NSStackView(views: [autoButton, NSView(), cancel, doneButton])
-
-        let stack = NSStackView(views: [header, preview, statusLabel, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: background.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            stack.widthAnchor.constraint(equalToConstant: Self.width)
-        ])
-        for v in [header, preview, statusLabel, buttons] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-            v.widthAnchor.constraint(equalToConstant: Self.width - 28).isActive = true
-        }
-        contentView = background
-        setContentSize(stack.fittingSize)
-    }
-
-    func show(_ update: ScrollCaptureSession.Update) {
-        if let image = update.preview {
-            preview.image = NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
-        }
-        if update.pixelSize.width > 0 {
-            sizeLabel.stringValue = "\(update.pixelSize.width) × \(update.pixelSize.height) px"
-        }
-        switch update.status {
-        case .waiting:
-            statusLabel.stringValue = "Slowly scroll down (or sideways) through the content, or click Auto-Scroll. Only the moving part should be inside the frame."
-        case .capturing:
-            statusLabel.stringValue = "Keep scrolling slowly. Press Done (↩) when you reach the end."
-        case .lost:
-            statusLabel.stringValue = "Lost track — scroll back a little and go slower, in a straight line. Scrolling up isn't supported."
-        case .limitReached:
-            statusLabel.stringValue = "Maximum length reached. Press Done."
-        }
-    }
-
-    func setAutoScrolling(_ on: Bool) {
-        autoButton.title = on ? "Stop Scrolling" : "Auto-Scroll"
+    func place(below area: CGRect, on screen: NSScreen) {
+        let size = frame.size
+        let visible = screen.visibleFrame
+        var origin = CGPoint(x: area.midX - size.width / 2, y: area.minY - size.height - 10)
+        if origin.y < visible.minY + 4 { origin.y = area.minY + 10 }
+        origin.x = min(max(origin.x, visible.minX + 8), visible.maxX - size.width - 8)
+        setFrameOrigin(origin)
     }
 
     func setBusy() {
-        statusLabel.stringValue = "Finishing…"
         doneButton.isEnabled = false
-        autoButton.isEnabled = false
-    }
-
-    /// To the right of the area, else to the left, else inside its right edge.
-    func place(beside rect: CGRect, on screen: NSScreen) {
-        let size = frame.size
-        let visible = screen.visibleFrame
-        var x = rect.maxX + 16
-        if x + size.width > visible.maxX - 8 { x = rect.minX - size.width - 16 }
-        if x < visible.minX + 8 { x = rect.maxX - size.width - 16 }
-        var y = rect.maxY - size.height
-        y = min(max(y, visible.minY + 8), visible.maxY - size.height - 8)
-        setFrameOrigin(CGPoint(x: x, y: y))
+        doneButton.alphaValue = 0.5
     }
 
     override func sendEvent(_ event: NSEvent) {
@@ -394,8 +422,41 @@ final class ScrollCapturePanel: NSPanel {
         }
         super.sendEvent(event)
     }
+}
 
-    @objc private func autoScroll() { onAutoScroll?() }
-    @objc private func cancel() { onCancel?() }
-    @objc private func done() { onDone?() }
+/// Small "Auto-Scroll" pill inside the bottom of the area.
+@MainActor
+final class ScrollAutoPill: NSPanel {
+    var onToggle: (() -> Void)?
+    private var button: PillLabelButton!
+
+    init() {
+        super.init(contentRect: CGRect(x: 0, y: 0, width: 120, height: 28),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        level = .floating
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        setActive(false)
+    }
+
+    func setActive(_ active: Bool) {
+        button = PillLabelButton(title: active ? "Stop Scrolling" : "Auto-Scroll",
+                                 symbol: active ? "stop.fill" : "arrow.down.circle.fill", light: false) { [weak self] in
+            self?.onToggle?()
+        }
+        contentView = button
+        setContentSize(button.fittingSize)
+        if frame.width > 0, let center = centerPoint { setFrameOrigin(CGPoint(x: center.x - frame.width / 2, y: frame.minY)) }
+    }
+
+    private var centerPoint: CGPoint?
+
+    func place(insideBottomOf area: CGRect) {
+        centerPoint = CGPoint(x: area.midX, y: area.minY)
+        setFrameOrigin(CGPoint(x: area.midX - frame.width / 2, y: area.minY + 12))
+    }
 }

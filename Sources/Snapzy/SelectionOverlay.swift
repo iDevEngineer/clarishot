@@ -5,6 +5,8 @@ enum SelectionMode {
     case window
     /// Area you can move and resize, then pick what to do from an action bar.
     case allInOne
+    /// Adjustable area for scrolling capture, confirmed with a Start Capture pill.
+    case scrollArea
 }
 
 /// What to do with an All-In-One selection.
@@ -104,6 +106,9 @@ final class OverlayView: NSView {
     }
 
     private var interaction: Interaction = .none
+    /// Modes where the selection stays on screen to be moved and resized.
+    private var editable: Bool { mode == .allInOne || mode == .scrollArea }
+    private var startBar: ScrollStartBar?
     private var actionBar: AllInOneBar?
     private var aspectLocked = false
     private var aspectRatio: CGFloat = 1
@@ -118,7 +123,7 @@ final class OverlayView: NSView {
         let global = NSEvent.mouseLocation
         if shot.screen.frame.contains(global) { mouse = toLocal(global) }
         updateHover()
-        if mode == .allInOne, let initialSelection, bounds.contains(initialSelection) {
+        if editable, let initialSelection, bounds.contains(initialSelection) {
             selection = initialSelection
             showActionBar()
         }
@@ -166,21 +171,24 @@ final class OverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard mode != .window else { return }
         let p = convert(event.locationInWindow, from: nil)
-        if mode == .allInOne, let rect = selection {
+        if editable, let rect = selection {
             if let handle = handle(at: p, in: rect) {
                 interaction = .resizing(handle: handle, original: rect)
                 actionBar?.isHidden = true
+                startBar?.isHidden = true
                 return
             }
             if rect.contains(p) {
                 interaction = .moving(grab: p, original: rect)
                 actionBar?.isHidden = true
+                startBar?.isHidden = true
                 return
             }
         }
         interaction = .drawing(start: p)
         selection = nil
         actionBar?.isHidden = true
+        startBar?.isHidden = true
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -217,13 +225,14 @@ final class OverlayView: NSView {
             }
         case .window:
             if let hovered { onFinish?(.window(hovered.id)) }
-        case .allInOne:
+        case .allInOne, .scrollArea:
             if let rect = selection, rect.width >= 4, rect.height >= 4 {
                 if !aspectLocked { aspectRatio = rect.width / max(rect.height, 1) }
                 showActionBar()
             } else {
                 selection = nil
                 actionBar?.isHidden = true
+                startBar?.isHidden = true
             }
             needsDisplay = true
         }
@@ -232,7 +241,7 @@ final class OverlayView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: onFinish?(nil)
-        case 36 where mode == .allInOne, 76 where mode == .allInOne: perform(.screenshot)
+        case 36 where editable, 76 where editable: perform(mode == .scrollArea ? .scrolling : .screenshot)
         default: super.keyDown(with: event)
         }
     }
@@ -248,6 +257,17 @@ final class OverlayView: NSView {
 
     private func showActionBar() {
         guard let rect = selection else { return }
+        if mode == .scrollArea {
+            let pill = startBar ?? makeStartBar()
+            pill.isHidden = false
+            // Sits on the bottom edge, like a tab hanging off the selection.
+            let size = pill.fittingSize
+            var origin = CGPoint(x: rect.midX - size.width / 2, y: rect.minY - size.height - 8)
+            if origin.y < 8 { origin.y = rect.minY + 8 }
+            origin.x = min(max(origin.x, 8), bounds.maxX - size.width - 8)
+            pill.frame = CGRect(origin: origin, size: size)
+            return
+        }
         let bar = actionBar ?? makeActionBar()
         bar.update(size: rect.size, locked: aspectLocked)
         bar.isHidden = false
@@ -258,6 +278,14 @@ final class OverlayView: NSView {
         if origin.y + size.height > bounds.maxY - 8 { origin.y = rect.minY + 12 }
         origin.x = min(max(origin.x, 8), bounds.maxX - size.width - 8)
         bar.frame = CGRect(origin: origin, size: size)
+    }
+
+    private func makeStartBar() -> ScrollStartBar {
+        let bar = ScrollStartBar()
+        bar.onStart = { [weak self] in self?.perform(.scrolling) }
+        addSubview(bar)
+        startBar = bar
+        return bar
     }
 
     private func makeActionBar() -> AllInOneBar {
@@ -334,7 +362,7 @@ final class OverlayView: NSView {
     }
 
     private func updateCursor() {
-        guard mode == .allInOne, let rect = selection, let mouse, case .none = interaction else {
+        guard editable, let rect = selection, let mouse, case .none = interaction else {
             CrosshairCursor.shared.set()
             return
         }
@@ -358,7 +386,7 @@ final class OverlayView: NSView {
         ctx.draw(shot.image, in: bounds)
 
         switch mode {
-        case .area, .allInOne: drawArea(ctx)
+        case .area, .allInOne, .scrollArea: drawArea(ctx)
         case .window: drawWindowHighlight(ctx)
         }
         if let hint, selection == nil { drawHint(hint) }
@@ -402,21 +430,44 @@ final class OverlayView: NSView {
             ctx.setLineWidth(1)
             ctx.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
 
-            if mode == .allInOne, case .drawing = interaction {} else if mode == .allInOne {
-                for (_, box) in handleRects(for: rect) {
-                    let dot = NSBezierPath(ovalIn: box.insetBy(dx: 1, dy: 1))
-                    NSColor.white.setFill()
-                    dot.fill()
-                    NSColor.black.withAlphaComponent(0.4).setStroke()
-                    dot.lineWidth = 1
-                    dot.stroke()
-                }
-            }
-            if case .none = interaction, mode == .allInOne { return } // the bar shows the size
+            if editable, case .drawing = interaction {} else if editable { drawHandles(for: rect, ctx) }
+            if case .none = interaction, editable { return } // the bar shows the size
             drawLabel("\(Int(rect.width)) × \(Int(rect.height))", near: mouse ?? CGPoint(x: rect.maxX, y: rect.minY))
-        } else if let mouse {
-            drawLabel("\(Int(mouse.x)), \(Int(bounds.height - mouse.y))", near: mouse)
+        } else {
+            if mode == .scrollArea {
+                ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+                ctx.fill(bounds)
+            }
+            if let mouse { drawLabel("\(Int(mouse.x)), \(Int(bounds.height - mouse.y))", near: mouse) }
         }
+    }
+
+    /// Corner brackets plus short bars on each edge, for resizing.
+    private func drawHandles(for rect: CGRect, _ ctx: CGContext) {
+        let arm: CGFloat = 12, bar: CGFloat = 10
+        let path = CGMutablePath()
+        for (x, y, dx, dy) in [(rect.minX, rect.maxY, 1.0, -1.0), (rect.maxX, rect.maxY, -1.0, -1.0),
+                               (rect.maxX, rect.minY, -1.0, 1.0), (rect.minX, rect.minY, 1.0, 1.0)] {
+            path.move(to: CGPoint(x: x + dx * arm, y: y))
+            path.addLine(to: CGPoint(x: x, y: y))
+            path.addLine(to: CGPoint(x: x, y: y + dy * arm))
+        }
+        path.move(to: CGPoint(x: rect.midX - bar, y: rect.maxY)); path.addLine(to: CGPoint(x: rect.midX + bar, y: rect.maxY))
+        path.move(to: CGPoint(x: rect.midX - bar, y: rect.minY)); path.addLine(to: CGPoint(x: rect.midX + bar, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY - bar)); path.addLine(to: CGPoint(x: rect.minX, y: rect.midY + bar))
+        path.move(to: CGPoint(x: rect.maxX, y: rect.midY - bar)); path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY + bar))
+        ctx.saveGState()
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.addPath(path)
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.35).cgColor)
+        ctx.setLineWidth(5)
+        ctx.strokePath()
+        ctx.addPath(path)
+        ctx.setStrokeColor(NSColor.white.cgColor)
+        ctx.setLineWidth(3)
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     private func drawWindowHighlight(_ ctx: CGContext) {
@@ -602,6 +653,69 @@ final class AllInOneBar: NSVisualEffectView, NSTextFieldDelegate {
         box.heightAnchor.constraint(equalToConstant: 22).isActive = true
         return box
     }
+}
+
+/// "↓ Start Capture" pill plus a "?" with tips, under a scrolling-capture selection.
+@MainActor
+final class ScrollStartBar: NSView {
+    var onStart: (() -> Void)?
+
+    init() {
+        super.init(frame: .zero)
+        let start = PillLabelButton(title: "Start Capture", symbol: "arrow.down", light: true) { [weak self] in self?.onStart?() }
+        let help = PillLabelButton(title: "", symbol: "questionmark", light: false) {}
+        help.toolTip = """
+        Select only the part that scrolls — leave out fixed headers and the scroll bar.
+        Then scroll slowly and straight down (or sideways), or use Auto-Scroll.
+        Scrolling back up is fine. Scrolling very fast or diagonally can break the capture.
+        """
+        let stack = NSStackView(views: [start, help])
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}
+
+/// Rounded pill with an icon and optional title. Light = white with dark text; dark = translucent black.
+@MainActor
+final class PillLabelButton: NSButton {
+    private let handler: () -> Void
+
+    init(title: String, symbol: String, light: Bool, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(frame: .zero)
+        isBordered = false
+        wantsLayer = true
+        let height: CGFloat = 28
+        layer?.cornerRadius = height / 2
+        layer?.backgroundColor = (light ? NSColor.white : NSColor.black.withAlphaComponent(0.72)).cgColor
+        layer?.shadowOpacity = 0.25
+        let tint = light ? NSColor.black.withAlphaComponent(0.85) : NSColor.white
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .bold))
+        contentTintColor = tint
+        imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        attributedTitle = NSAttributedString(string: title.isEmpty ? "" : " \(title)", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: tint
+        ])
+        target = self
+        action = #selector(clicked)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: height).isActive = true
+        let width = title.isEmpty ? height : attributedTitle.size().width + 40
+        widthAnchor.constraint(equalToConstant: width).isActive = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    @objc private func clicked() { handler() }
 }
 
 /// A large crosshair cursor: four arms with a gap in the middle, white with a
