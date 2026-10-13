@@ -26,6 +26,9 @@ final class SelectionOverlayController {
             let window = OverlayWindow(contentRect: shot.screen.frame, styleMask: .borderless,
                                        backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            // No zoom-in when it appears: the overlay shows a frozen copy of the screen,
+            // so macOS's appear animation made the whole screen seem to shrink.
+            window.animationBehavior = .none
             window.level = .screenSaver
             window.isOpaque = true
             window.hasShadow = false

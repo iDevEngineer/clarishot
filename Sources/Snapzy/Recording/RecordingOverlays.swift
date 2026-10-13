@@ -320,6 +320,7 @@ final class DesktopIconHider {
                   let image = NSImage(contentsOf: url) else { continue }
             let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.animationBehavior = .none
             window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
             window.ignoresMouseEvents = true
             window.collectionBehavior = [.canJoinAllSpaces, .stationary]

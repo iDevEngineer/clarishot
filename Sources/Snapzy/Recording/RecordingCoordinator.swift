@@ -380,6 +380,7 @@ final class RegionOutlineWindow: NSWindow {
         let frame = rect.insetBy(dx: -Self.border, dy: -Self.border)
         super.init(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         isReleasedWhenClosed = false
+        animationBehavior = .none
         level = .screenSaver
         backgroundColor = .clear
         isOpaque = false
