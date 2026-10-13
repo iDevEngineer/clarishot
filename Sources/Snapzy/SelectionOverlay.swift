@@ -47,7 +47,7 @@ final class SelectionOverlayController {
         let keyWindow = windows.first { $0.frame.contains(mouse) } ?? windows.first
         keyWindow?.makeKey()
         keyWindow?.makeFirstResponder(keyWindow?.contentView)
-        NSCursor.crosshair.set()
+        CrosshairCursor.shared.set()
     }
 
     private func finish(_ result: SelectionResult?) {
@@ -102,8 +102,8 @@ final class OverlayView: NSView {
                                        owner: self))
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: CrosshairCursor.shared) }
+    override func cursorUpdate(with event: NSEvent) { CrosshairCursor.shared.set() }
 
     // MARK: Mouse and keys
 
@@ -203,23 +203,7 @@ final class OverlayView: NSView {
 
             drawLabel("\(Int(rect.width)) × \(Int(rect.height))", near: mouse ?? CGPoint(x: rect.maxX, y: rect.minY))
         } else if let mouse {
-            drawCrosshair(at: mouse, ctx)
             drawLabel("\(Int(mouse.x)), \(Int(bounds.height - mouse.y))", near: mouse)
-        }
-    }
-
-    private func drawCrosshair(at point: CGPoint, _ ctx: CGContext) {
-        let x = point.x.rounded() + 0.5
-        let y = point.y.rounded() + 0.5
-        ctx.setLineWidth(1)
-        // Dark line under a light one keeps the crosshair visible on any background.
-        for (color, offset) in [(NSColor.black.withAlphaComponent(0.35), 1.0), (NSColor.white.withAlphaComponent(0.85), 0.0)] {
-            ctx.setStrokeColor(color.cgColor)
-            ctx.move(to: CGPoint(x: 0, y: y - offset))
-            ctx.addLine(to: CGPoint(x: bounds.maxX, y: y - offset))
-            ctx.move(to: CGPoint(x: x + offset, y: 0))
-            ctx.addLine(to: CGPoint(x: x + offset, y: bounds.maxY))
-            ctx.strokePath()
         }
     }
 
@@ -241,7 +225,8 @@ final class OverlayView: NSView {
         ]
         let string = NSAttributedString(string: text, attributes: attributes)
         let size = string.size()
-        var box = CGRect(x: point.x + 14, y: point.y - size.height - 22,
+        // Below and to the right of the cursor, clear of the crosshair.
+        var box = CGRect(x: point.x + 20, y: point.y - size.height - 26,
                          width: size.width + 12, height: size.height + 6)
         if box.maxX > bounds.maxX - 4 { box.origin.x = point.x - box.width - 14 }
         if box.minY < 4 { box.origin.y = point.y + 14 }
@@ -265,4 +250,37 @@ final class OverlayView: NSView {
     private func clamped(_ point: CGPoint) -> CGPoint {
         CGPoint(x: min(max(point.x, 0), bounds.maxX), y: min(max(point.y, 0), bounds.maxY))
     }
+}
+
+/// A large crosshair cursor: four arms with a gap in the middle, white with a
+/// dark outline so it shows on any background. The hot spot is the centre.
+@MainActor
+enum CrosshairCursor {
+    static let shared: NSCursor = {
+        let size: CGFloat = 40
+        let image = NSImage(size: CGSize(width: size, height: size), flipped: false) { rect in
+            let c = CGPoint(x: rect.midX, y: rect.midY)
+            let gap: CGFloat = 5, arm: CGFloat = 17
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: c.x - arm, y: c.y)); path.line(to: CGPoint(x: c.x - gap, y: c.y))
+            path.move(to: CGPoint(x: c.x + gap, y: c.y)); path.line(to: CGPoint(x: c.x + arm, y: c.y))
+            path.move(to: CGPoint(x: c.x, y: c.y - arm)); path.line(to: CGPoint(x: c.x, y: c.y - gap))
+            path.move(to: CGPoint(x: c.x, y: c.y + gap)); path.line(to: CGPoint(x: c.x, y: c.y + arm))
+            path.lineCapStyle = .round
+            path.lineWidth = 4.5
+            NSColor.black.withAlphaComponent(0.55).setStroke()
+            path.stroke()
+            path.lineWidth = 2
+            NSColor.white.setStroke()
+            path.stroke()
+            let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 1.5, y: c.y - 1.5, width: 3, height: 3))
+            NSColor.black.withAlphaComponent(0.55).setStroke()
+            dot.lineWidth = 1.5
+            dot.stroke()
+            NSColor.white.setFill()
+            dot.fill()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: CGPoint(x: size / 2, y: size / 2))
+    }()
 }

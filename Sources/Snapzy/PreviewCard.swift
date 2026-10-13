@@ -123,8 +123,9 @@ final class PreviewPanel: NSPanel {
 final class PreviewCardView: NSView, NSDraggingSource {
     var onDismiss: (() -> Void)?
 
-    private static let width: CGFloat = 220
-    private static let padding: CGFloat = 8
+    private static let maxSize = CGSize(width: 220, height: 240)
+    private static let minSide: CGFloat = 110
+    private static let radius: CGFloat = 12
     private let capture: Capture
     private let thumbRect: CGRect
     private let hoverView = NSView()
@@ -132,17 +133,14 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     init(capture: Capture) {
         self.capture = capture
-        let innerWidth = Self.width - 2 * Self.padding
-        let aspect = capture.pointSize.width / max(capture.pointSize.height, 1)
-        let innerHeight = min(max(innerWidth / aspect, 110), 240)
-        let height = innerHeight + 2 * Self.padding
-        // Fit the image inside the inner area so the rounded corners hug it.
-        let inner = CGRect(x: Self.padding, y: Self.padding, width: innerWidth, height: innerHeight)
-        let fit = min(inner.width / max(capture.pointSize.width, 1), inner.height / max(capture.pointSize.height, 1))
-        let fitted = CGSize(width: capture.pointSize.width * fit, height: capture.pointSize.height * fit)
-        thumbRect = CGRect(x: inner.midX - fitted.width / 2, y: inner.midY - fitted.height / 2,
-                           width: fitted.width, height: fitted.height).integral
-        super.init(frame: CGRect(x: 0, y: 0, width: Self.width, height: height))
+        // The card is the image itself, no border: fit it in the max size, but keep
+        // very thin images (e.g. long scrolling captures) from becoming slivers.
+        let size = capture.pointSize
+        let fit = min(Self.maxSize.width / max(size.width, 1), Self.maxSize.height / max(size.height, 1))
+        let width = min(max((size.width * fit).rounded(), Self.minSide), Self.maxSize.width)
+        let height = min(max((size.height * fit).rounded(), Self.minSide), Self.maxSize.height)
+        thumbRect = CGRect(x: 0, y: 0, width: width, height: height)
+        super.init(frame: thumbRect)
         setUp()
     }
 
@@ -150,27 +148,25 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     private func setUp() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.white.cgColor
-        layer?.cornerRadius = 16
+        layer?.cornerRadius = Self.radius
         layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.28
+        layer?.shadowOpacity = 0.3
         layer?.shadowRadius = 14
         layer?.shadowOffset = CGSize(width: 0, height: -4)
-        layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor
-        layer?.borderWidth = 0.5
+        layer?.shadowPath = CGPath(roundedRect: thumbRect, cornerWidth: Self.radius, cornerHeight: Self.radius, transform: nil)
 
         let thumb = CALayer()
         thumb.frame = thumbRect
         thumb.contents = capture.image
-        thumb.contentsGravity = .resizeAspect
-        thumb.cornerRadius = 10
+        thumb.contentsGravity = .resizeAspectFill
+        thumb.cornerRadius = Self.radius
         thumb.masksToBounds = true
         layer?.addSublayer(thumb)
 
         hoverView.frame = thumbRect
         hoverView.wantsLayer = true
         hoverView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.42).cgColor
-        hoverView.layer?.cornerRadius = 10
+        hoverView.layer?.cornerRadius = Self.radius
         hoverView.alphaValue = 0
         addSubview(hoverView)
         buildHoverControls()
