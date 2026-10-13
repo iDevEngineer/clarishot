@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 
 /// Stacks the floating preview cards in a corner of the screen (see Settings → Quick Access).
 @MainActor
@@ -168,12 +169,35 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
         hoverView.frame = thumbRect
         hoverView.wantsLayer = true
-        hoverView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.42).cgColor
         hoverView.layer?.cornerRadius = Self.radius
+        hoverView.layer?.masksToBounds = true
         hoverView.alphaValue = 0
+        // On hover: a blurred copy of the thumbnail, lightly darkened, under the buttons.
+        let blurred = CALayer()
+        blurred.frame = hoverView.bounds
+        blurred.contents = Self.blurredThumbnail(capture.image, size: thumbRect.size)
+        blurred.contentsGravity = .resizeAspectFill
+        let dim = CALayer()
+        dim.frame = hoverView.bounds
+        dim.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
+        hoverView.layer?.addSublayer(blurred)
+        hoverView.layer?.addSublayer(dim)
         addSubview(hoverView)
         buildHoverControls()
         if capture.isVideo { addDurationBadge() }
+    }
+
+    /// A small, blurred copy of the image for the hover state.
+    private static func blurredThumbnail(_ image: CGImage, size: CGSize) -> CGImage? {
+        let input = CIImage(cgImage: image)
+        // Shrink first (to about 2× the card size) so the blur is cheap.
+        let shrink = min(1, (max(size.width, size.height) * 2) / CGFloat(max(image.width, image.height)))
+        let small = input.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink))
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
+        filter.setValue(small.clampedToExtent(), forKey: kCIInputImageKey)
+        filter.setValue(10, forKey: kCIInputRadiusKey)
+        guard let output = filter.outputImage?.cropped(to: small.extent) else { return nil }
+        return CIContext().createCGImage(output, from: small.extent)
     }
 
     /// "▶ 0:12" label in the thumbnail's bottom-right corner.
