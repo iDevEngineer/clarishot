@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// Keeps a screenshot floating above all other windows.
 /// Hover shows: close (top-left), lock (top-right) and Paste (bottom centre).
 /// While locked the pin can only be closed: no pasting and no moving.
-/// Double-click or Esc also closes it.
+/// Only the close button (or Esc) closes it, so it can't be closed by accident.
 @MainActor
 final class PinWindow: NSPanel {
     private static var open: [PinWindow] = []
@@ -54,24 +54,34 @@ final class PinWindow: NSPanel {
     /// Copies the image and presses ⌘V in the app you were last using.
     private func paste() {
         capture.copyToClipboard()
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        guard AXIsProcessTrustedWithOptions(options) else {
-            Toast.show("Copied — press ⌘V to paste (allow Snapzy in Accessibility to paste directly)")
+        guard AXIsProcessTrusted() else {
+            // Show the system prompt so the user can allow it, and leave the image on the clipboard.
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+            Toast.show("Copied — press ⌘V. To paste directly, allow Snapzy in Accessibility, then restart it.")
             return
         }
-        let target = NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid()
-            ? Self.lastOtherApp : NSWorkspace.shared.frontmostApplication
-        target?.activate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        // Paste into the app you were working in (clicking the pin doesn't switch apps, but a
+        // Snapzy window like Annotate might be in front).
+        let front = NSWorkspace.shared.frontmostApplication
+        var delay = 0.05
+        if front?.processIdentifier == getpid(), let target = Self.lastOtherApp {
+            target.activate()
+            delay = 0.25
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             Self.pressCommandV()
         }
     }
 
+    /// Sends ⌘V as real key presses: Command down, V down, V up, Command up.
     private static func pressCommandV() {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        for down in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down)
-            event?.flags = .maskCommand
+        let source = CGEventSource(stateID: .hidSystemState)
+        let command = CGKeyCode(kVK_Command), v = CGKeyCode(kVK_ANSI_V)
+        let steps: [(CGKeyCode, Bool)] = [(command, true), (v, true), (v, false), (command, false)]
+        for (key, down) in steps {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down)
+            event?.flags = (key == v || down) ? .maskCommand : []
             event?.post(tap: .cghidEventTap)
         }
     }
@@ -180,7 +190,4 @@ private final class PinView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { onClose?() } else { super.mouseDown(with: event) }
-    }
 }

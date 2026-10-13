@@ -99,9 +99,15 @@ final class Capture {
         pasteboard.clearContents()
         if let videoURL {
             pasteboard.writeObjects([videoURL as NSURL])
-        } else {
-            pasteboard.writeObjects([nsImage])
+            return
         }
+        // Offer PNG as well as TIFF: browsers and Electron apps (Slack, Chrome, VS Code) read PNG.
+        let item = NSPasteboardItem()
+        let rep = NSBitmapImageRep(cgImage: image)
+        rep.size = pointSize
+        if let png = rep.representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
+        if let tiff = nsImage.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        pasteboard.writeObjects([item])
     }
 
     @discardableResult
