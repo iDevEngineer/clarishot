@@ -1,0 +1,11 @@
+# Build output
+.build/
+build/
+
+# App bundles
+*.app/
+
+# macOS / tooling
+.DS_Store
+.claude/
+.swiftpm/
