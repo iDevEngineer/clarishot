@@ -109,6 +109,12 @@ final class Settings {
         }
     }
 
+    /// Capture Text: keep each line on its own line (otherwise lines in a paragraph are joined).
+    var keepLineBreaks: Bool {
+        get { bool("keepLineBreaks", default: true) }
+        set { set(newValue, "keepLineBreaks") }
+    }
+
     var showMagnifier: Bool {
         get { bool("showMagnifier", default: false) }
         set { set(newValue, "showMagnifier") }
@@ -237,7 +243,7 @@ final class Settings {
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",
-                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle", "autoBackgroundPreset"] {
+                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle", "autoBackgroundPreset", "keepLineBreaks"] {
             defaults.removeObject(forKey: key)
         }
         notify()

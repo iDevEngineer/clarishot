@@ -26,7 +26,7 @@ final class CaptureCoordinator {
     private func copyText(from capture: Capture) {
         Task {
             let text = await ScreenCapturer.recognizeText(in: capture.image)
-            guard !text.isEmpty else { Toast.show("No text found"); return }
+            guard !text.isEmpty else { Toast.show("No text or QR code found"); return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
             Toast.show("Text copied to clipboard")

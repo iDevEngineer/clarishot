@@ -238,7 +238,8 @@ final class ScreenshotsPane: SettingsPane {
         row("Options",
             checkbox("Scale Retina screenshots to 1x", get: { s.scaleScreenshotsTo1x }, set: { s.scaleScreenshotsTo1x = $0 }),
             checkbox("Show cursor on screenshots", get: { s.showCursorInScreenshots }, set: { s.showCursorInScreenshots = $0 }),
-            checkbox("Show magnifier while selecting", get: { s.showMagnifier }, set: { s.showMagnifier = $0 }))
+            checkbox("Show magnifier while selecting", get: { s.showMagnifier }, set: { s.showMagnifier = $0 }),
+            checkbox("Capture Text: keep line breaks", get: { s.keepLineBreaks }, set: { s.keepLineBreaks = $0 }))
         note("Scaling to 1x makes files smaller and helps Retina screenshots display at the right size in other apps.")
         separator()
         let styles = Settings.WindowStyle.allCases

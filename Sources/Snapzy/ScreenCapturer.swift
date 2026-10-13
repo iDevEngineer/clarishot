@@ -1,6 +1,5 @@
 import AppKit
 import ScreenCaptureKit
-import Vision
 
 enum CaptureError: LocalizedError {
     case displayNotFound
@@ -105,15 +104,12 @@ enum ScreenCapturer {
     }
 
     /// Reads the text in an image using Apple's Vision framework.
-    nonisolated static func recognizeText(in image: CGImage) async -> String {
-        await withCheckedContinuation { continuation in
+    /// Text plus any QR code / barcode contents (see `TextRecognizer`).
+    static func recognizeText(in image: CGImage) async -> String {
+        let keepLineBreaks = Settings.shared.keepLineBreaks
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.usesLanguageCorrection = true
-                try? VNImageRequestHandler(cgImage: image).perform([request])
-                let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                continuation.resume(returning: lines.joined(separator: "\n"))
+                continuation.resume(returning: TextRecognizer.recognize(image, keepLineBreaks: keepLineBreaks))
             }
         }
     }
