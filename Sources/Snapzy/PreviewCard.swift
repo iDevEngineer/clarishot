@@ -177,6 +177,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
         blurred.frame = hoverView.bounds
         blurred.contents = Self.blurredThumbnail(capture.image, size: thumbRect.size)
         blurred.contentsGravity = .resizeAspectFill
+        blurred.opacity = 0.75 // let the sharp image show through a little (frosted look)
         let dim = CALayer()
         dim.frame = hoverView.bounds
         dim.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
