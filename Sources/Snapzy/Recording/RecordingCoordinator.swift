@@ -50,7 +50,9 @@ final class RecordingCoordinator {
 
     // MARK: Setup
 
-    private func showSetup(screen: NSScreen, rect: CGRect) {
+    /// Opens the recording options for an area that was already chosen (e.g. from All-In-One).
+    func showSetup(screen: NSScreen, rect: CGRect) {
+        guard setupPanel == nil, !isRecording else { return }
         region = (screen, rect)
         guard let globalRect else { return }
         let outline = RegionOutlineWindow(rect: globalRect)

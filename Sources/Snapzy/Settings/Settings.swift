@@ -11,6 +11,17 @@ final class Settings {
 
     enum ImageFormat: String, CaseIterable { case png, jpeg }
 
+    enum WindowStyle: String, CaseIterable {
+        case transparent, shadow, background
+        var title: String {
+            switch self {
+            case .transparent: return "Transparent"
+            case .shadow: return "With shadow"
+            case .background: return "On wallpaper"
+            }
+        }
+    }
+
     enum PreviewPosition: String, CaseIterable {
         case bottomLeft, bottomRight, topLeft, topRight
         var title: String {
@@ -81,6 +92,23 @@ final class Settings {
     var scaleScreenshotsTo1x: Bool {
         get { bool("scaleScreenshotsTo1x", default: false) }
         set { set(newValue, "scaleScreenshotsTo1x") }
+    }
+
+    /// How window captures look: just the window, with a soft shadow, or on the wallpaper.
+    var windowStyle: WindowStyle {
+        get { WindowStyle(rawValue: defaults.string(forKey: "windowStyle") ?? "") ?? .shadow }
+        set { set(newValue.rawValue, "windowStyle") }
+    }
+
+    var showMagnifier: Bool {
+        get { bool("showMagnifier", default: true) }
+        set { set(newValue, "showMagnifier") }
+    }
+
+    /// Seconds the self-timer waits before capturing.
+    var selfTimerSeconds: Int {
+        get { defaults.object(forKey: "selfTimerSeconds") as? Int ?? 5 }
+        set { set(newValue, "selfTimerSeconds") }
     }
 
     var showCursorInScreenshots: Bool {
@@ -200,7 +228,7 @@ final class Settings {
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",
-                    "customWallpaper", "shortcuts", "historyDays"] {
+                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle"] {
             defaults.removeObject(forKey: key)
         }
         notify()

@@ -8,6 +8,8 @@ final class CaptureCoordinator {
 
     private var overlay: SelectionOverlayController?
     private var lastArea: (displayID: CGDirectDisplayID, rect: CGRect)?
+    /// All-In-One remembers its last selection.
+    private var lastAllInOne: (displayID: CGDirectDisplayID, rect: CGRect)?
 
     var hasPreviousArea: Bool { lastArea != nil }
 
@@ -18,13 +20,73 @@ final class CaptureCoordinator {
     }
 
     func captureText() {
-        selectArea { capture in
-            Task {
-                let text = await ScreenCapturer.recognizeText(in: capture.image)
-                guard !text.isEmpty else { Toast.show("No text found"); return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                Toast.show("Text copied to clipboard")
+        selectArea { [weak self] capture in self?.copyText(from: capture) }
+    }
+
+    private func copyText(from capture: Capture) {
+        Task {
+            let text = await ScreenCapturer.recognizeText(in: capture.image)
+            guard !text.isEmpty else { Toast.show("No text found"); return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            Toast.show("Text copied to clipboard")
+        }
+    }
+
+    /// One shortcut for everything: pick (or adjust the remembered) area, then choose
+    /// screenshot, text, scrolling, record or self-timer from the bar.
+    func allInOne() {
+        guard overlay == nil else { return }
+        Task {
+            do {
+                let shots = try await ScreenCapturer.captureAllScreens()
+                present(shots, mode: .allInOne, targets: [], initial: lastAllInOne) { [weak self] result in
+                    guard let self, case let .allInOne(shot, rect, action)? = result else { return }
+                    let display = ScreenCapturer.displayID(for: shot.screen)
+                    self.lastAllInOne = (display, rect)
+                    self.lastArea = (display, rect)
+                    switch action {
+                    case .screenshot:
+                        guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
+                        self.deliver(Capture(image: image, scale: shot.screen.backingScaleFactor))
+                    case .text:
+                        guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
+                        self.copyText(from: Capture(image: image, scale: shot.screen.backingScaleFactor))
+                    case .scrolling:
+                        ScrollCaptureCoordinator.shared.begin(screen: shot.screen, rect: rect)
+                    case .record:
+                        RecordingCoordinator.shared.showSetup(screen: shot.screen, rect: rect)
+                    case .timer:
+                        self.timedCapture(screen: shot.screen, rect: rect)
+                    }
+                }
+            } catch {
+                showCaptureError(error)
+            }
+        }
+    }
+
+    /// Pick an area, wait (Settings → Screenshots), then capture what's there at that moment.
+    func selfTimer() {
+        selectRegion(hint: "Drag an area — Snapzy will capture it after \(Settings.shared.selfTimerSeconds) seconds.") { [weak self] shot, rect in
+            self?.timedCapture(screen: shot.screen, rect: rect)
+        }
+    }
+
+    private func timedCapture(screen: NSScreen, rect: CGRect) {
+        let global = rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
+        Task {
+            let countdown = CountdownWindow(centeredIn: global)
+            guard await countdown.run(seconds: Settings.shared.selfTimerSeconds) else { return }
+            try? await Task.sleep(nanoseconds: 150_000_000) // let the countdown fade from the screen
+            do {
+                let shots = try await ScreenCapturer.captureAllScreens()
+                guard let shot = shots.first(where: { $0.screen == screen }) ?? shots.first,
+                      let image = ScreenCapturer.crop(shot, to: rect) else { return }
+                lastArea = (ScreenCapturer.displayID(for: screen), rect)
+                deliver(Capture(image: image, scale: screen.backingScaleFactor))
+            } catch {
+                showCaptureError(error)
             }
         }
     }
@@ -146,9 +208,10 @@ final class CaptureCoordinator {
     }
 
     private func present(_ shots: [ScreenShot], mode: SelectionMode, targets: [WindowTarget], hint: String? = nil,
+                         initial: (displayID: CGDirectDisplayID, rect: CGRect)? = nil,
                          completion: @escaping (SelectionResult?) -> Void) {
         let controller = SelectionOverlayController(shots: shots, mode: mode, targets: targets,
-                                                    hint: hint) { [weak self] result in
+                                                    hint: hint, initial: initial) { [weak self] result in
             self?.overlay = nil
             completion(result)
         }
@@ -160,7 +223,8 @@ final class CaptureCoordinator {
         Task {
             do {
                 let (image, scale) = try await ScreenCapturer.captureWindow(id: id)
-                deliver(Capture(image: image, scale: scale))
+                let framed = BackgroundRenderer.frameWindow(image, scale: scale, style: Settings.shared.windowStyle)
+                deliver(Capture(image: framed ?? image, scale: scale))
             } catch {
                 showCaptureError(error)
             }

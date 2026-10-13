@@ -39,11 +39,13 @@ struct Shortcut: Equatable {
 
 /// Everything that can have a global shortcut. ⌥⇧⌘ defaults avoid the system's ⇧⌘3/4/5.
 enum ShortcutAction: String, CaseIterable {
-    case captureArea, capturePreviousArea, captureFullscreen, captureWindow, scrollingCapture, captureText,
-         recordScreen, pauseRecording
+    case allInOne, captureArea, capturePreviousArea, captureFullscreen, captureWindow, scrollingCapture, selfTimer,
+         captureText, recordScreen, pauseRecording
 
     var title: String {
         switch self {
+        case .allInOne: return "All-In-One"
+        case .selfTimer: return "Self-Timer"
         case .captureArea: return "Capture Area"
         case .capturePreviousArea: return "Capture Previous Area"
         case .captureFullscreen: return "Capture Fullscreen"
@@ -58,6 +60,8 @@ enum ShortcutAction: String, CaseIterable {
     var defaultShortcut: Shortcut {
         let m: NSEvent.ModifierFlags = [.option, .shift, .command]
         switch self {
+        case .allInOne: return Shortcut(key: "a", keyCode: UInt32(kVK_ANSI_A), modifiers: m)
+        case .selfTimer: return Shortcut(key: "t", keyCode: UInt32(kVK_ANSI_T), modifiers: m)
         case .captureArea: return Shortcut(key: "4", keyCode: UInt32(kVK_ANSI_4), modifiers: m)
         case .capturePreviousArea: return Shortcut(key: "6", keyCode: UInt32(kVK_ANSI_6), modifiers: m)
         case .captureFullscreen: return Shortcut(key: "3", keyCode: UInt32(kVK_ANSI_3), modifiers: m)
@@ -73,6 +77,8 @@ enum ShortcutAction: String, CaseIterable {
     func perform() {
         let c = CaptureCoordinator.shared
         switch self {
+        case .allInOne: c.allInOne()
+        case .selfTimer: c.selfTimer()
         case .captureArea: c.captureArea()
         case .capturePreviousArea: c.capturePreviousArea()
         case .captureFullscreen: c.captureFullscreen()

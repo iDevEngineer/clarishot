@@ -92,6 +92,23 @@ struct BackgroundStyle {
 }
 
 enum BackgroundRenderer {
+    /// Window captures: adds a soft shadow (following the window's rounded shape),
+    /// optionally on the wallpaper. Returns nil for "transparent".
+    @MainActor
+    static func frameWindow(_ image: CGImage, scale: CGFloat, style: Settings.WindowStyle) -> CGImage? {
+        guard style != .transparent else { return nil }
+        let pad = Int(((style == .background ? 64 : 40) * scale).rounded())
+        let width = image.width + 2 * pad, height = image.height + 2 * pad
+        guard let ctx = AnnotationRenderer.makeContext(width: width, height: height, like: image) else { return nil }
+        if style == .background {
+            BackgroundFill.wallpaper.fill(CGRect(x: 0, y: 0, width: width, height: height), in: ctx, flipped: false)
+        }
+        ctx.setShadow(offset: CGSize(width: 0, height: -12 * scale), blur: 36 * scale,
+                      color: NSColor.black.withAlphaComponent(0.45).cgColor)
+        ctx.draw(image, in: CGRect(x: pad, y: pad, width: image.width, height: image.height))
+        return ctx.makeImage()
+    }
+
     /// Places the flattened screenshot on the background at full resolution.
     @MainActor
     static func compose(_ image: CGImage, scale: CGFloat, style: BackgroundStyle) -> CGImage? {

@@ -31,14 +31,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         menu.delegate = self
 
-        add(menu, "All-In-One", symbol: "1.circle", action: nil)
+        add(menu, "All-In-One", symbol: "1.circle", action: #selector(allInOne), shortcut: .allInOne)
         add(menu, "Capture Area", symbol: "viewfinder", action: #selector(captureArea), shortcut: .captureArea)
         previousAreaItem = add(menu, "Capture Previous Area", symbol: "arrow.clockwise",
                                action: #selector(capturePreviousArea), shortcut: .capturePreviousArea)
         add(menu, "Capture Fullscreen", symbol: "display", action: #selector(captureFullscreen), shortcut: .captureFullscreen)
         add(menu, "Capture Window", symbol: "macwindow", action: #selector(captureWindow), shortcut: .captureWindow)
         add(menu, "Scrolling Capture", symbol: "arrow.down", action: #selector(scrollingCapture), shortcut: .scrollingCapture)
-        add(menu, "Self-Timer", symbol: "timer", action: nil)
+        add(menu, "Self-Timer", symbol: "timer", action: #selector(selfTimer), shortcut: .selfTimer)
         add(menu, "Capture Text (OCR)", symbol: "textformat", action: #selector(captureText), shortcut: .captureText)
         add(menu, "Record Screen", symbol: "video", action: #selector(recordScreen), shortcut: .recordScreen)
         menu.addItem(.separator())
@@ -96,6 +96,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
     }
 
+    @objc private func allInOne() { CaptureCoordinator.shared.allInOne() }
+    @objc private func selfTimer() { CaptureCoordinator.shared.selfTimer() }
     @objc private func captureArea() { CaptureCoordinator.shared.captureArea() }
     @objc private func capturePreviousArea() { CaptureCoordinator.shared.capturePreviousArea() }
     @objc private func captureFullscreen() { CaptureCoordinator.shared.captureFullscreen() }

@@ -24,7 +24,9 @@ final class ScrollCaptureCoordinator {
         }
     }
 
-    private func begin(screen: NSScreen, rect: CGRect) {
+    /// Starts straight away on an area that was already chosen (e.g. from All-In-One).
+    func begin(screen: NSScreen, rect: CGRect) {
+        guard session == nil else { return }
         self.screen = screen
         globalRect = rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
 
