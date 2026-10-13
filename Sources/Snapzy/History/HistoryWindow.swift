@@ -43,7 +43,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
     private let emptyLabel = NSTextField(labelWithString: "")
     private var shown: [HistoryStore.Item] = []
     private var observer: NSObjectProtocol?
-    private static let stripHeight: CGFloat = 176
+    private static let stripHeight: CGFloat = 216
 
     private override init() {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
@@ -128,8 +128,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
 
         let layout = NSCollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
-        layout.itemSize = CGSize(width: 150, height: 122)
-        layout.minimumLineSpacing = 14
+        layout.itemSize = CGSize(width: 196, height: 158)
+        layout.minimumLineSpacing = 16
         layout.sectionInset = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         collection.collectionViewLayout = layout
         collection.isSelectable = false
@@ -383,14 +383,15 @@ final class HistoryCell: NSCollectionViewItem {
             thumb.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
             thumb.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             thumb.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
-            thumb.heightAnchor.constraint(equalToConstant: 84),
+            thumb.heightAnchor.constraint(equalToConstant: 112),
             badge.widthAnchor.constraint(equalToConstant: 22),
             badge.heightAnchor.constraint(equalToConstant: 22),
             badge.trailingAnchor.constraint(equalTo: thumb.trailingAnchor, constant: -5),
             badge.bottomAnchor.constraint(equalTo: thumb.bottomAnchor, constant: -5),
-            timeLabel.topAnchor.constraint(equalTo: thumb.bottomAnchor, constant: 8),
+            // Restore sits 10 pt below the thumbnail; the time label is centred in the same spot.
+            restoreButton.topAnchor.constraint(equalTo: thumb.bottomAnchor, constant: 10),
+            timeLabel.centerYAnchor.constraint(equalTo: restoreButton.centerYAnchor),
             timeLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            restoreButton.centerYAnchor.constraint(equalTo: timeLabel.centerYAnchor),
             restoreButton.centerXAnchor.constraint(equalTo: root.centerXAnchor)
         ])
         view = root
