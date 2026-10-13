@@ -48,7 +48,8 @@ final class CaptureCoordinator {
                     switch action {
                     case .screenshot:
                         guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
-                        self.deliver(Capture(image: image, scale: shot.screen.backingScaleFactor))
+                        self.deliver(Capture(image: image, scale: shot.screen.backingScaleFactor)
+                            .from(SourceApp.under(rect, on: shot.screen)))
                     case .text:
                         guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
                         self.copyText(from: Capture(image: image, scale: shot.screen.backingScaleFactor))
@@ -101,7 +102,7 @@ final class CaptureCoordinator {
                 guard let shot = shots.first(where: { $0.screen == screen }) ?? shots.first,
                       let image = ScreenCapturer.crop(shot, to: rect) else { return }
                 lastArea = (ScreenCapturer.displayID(for: screen), rect)
-                deliver(Capture(image: image, scale: screen.backingScaleFactor))
+                deliver(Capture(image: image, scale: screen.backingScaleFactor).from(SourceApp.under(rect, on: screen)))
             } catch {
                 showCaptureError(error)
             }
@@ -114,7 +115,7 @@ final class CaptureCoordinator {
                 let shots = try await ScreenCapturer.captureAllScreens()
                 let mouse = NSEvent.mouseLocation
                 guard let shot = shots.first(where: { $0.screen.frame.contains(mouse) }) ?? shots.first else { return }
-                deliver(Capture(image: shot.image, scale: shot.screen.backingScaleFactor))
+                deliver(Capture(image: shot.image, scale: shot.screen.backingScaleFactor).from(SourceApp.frontmost()))
             } catch {
                 showCaptureError(error)
             }
@@ -128,7 +129,8 @@ final class CaptureCoordinator {
                 let shots = try await ScreenCapturer.captureAllScreens()
                 guard let shot = shots.first(where: { ScreenCapturer.displayID(for: $0.screen) == lastArea.displayID }),
                       let image = ScreenCapturer.crop(shot, to: lastArea.rect) else { return }
-                deliver(Capture(image: image, scale: shot.screen.backingScaleFactor))
+                deliver(Capture(image: image, scale: shot.screen.backingScaleFactor)
+                    .from(SourceApp.under(lastArea.rect, on: shot.screen)))
             } catch {
                 showCaptureError(error)
             }
@@ -159,7 +161,7 @@ final class CaptureCoordinator {
         var capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
         if !capture.isVideo, let name = settings.autoBackgroundPreset, let style = BackgroundPresets.style(named: name),
            let framed = BackgroundRenderer.compose(capture.image, scale: capture.scale, style: style) {
-            capture = Capture(image: framed, scale: capture.scale)
+            capture = Capture(image: framed, scale: capture.scale).from(capture.sourceBundleID)
         }
         if settings.playSounds { CaptureSound.play() }
         HistoryStore.shared.add(capture)
@@ -207,7 +209,7 @@ final class CaptureCoordinator {
         selectRegion { [weak self] shot, rect in
             guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
             self?.lastArea = (ScreenCapturer.displayID(for: shot.screen), rect)
-            handle(Capture(image: image, scale: shot.screen.backingScaleFactor))
+            handle(Capture(image: image, scale: shot.screen.backingScaleFactor).from(SourceApp.under(rect, on: shot.screen)))
         }
     }
 
@@ -245,7 +247,7 @@ final class CaptureCoordinator {
             do {
                 let (image, scale) = try await ScreenCapturer.captureWindow(id: id)
                 let framed = BackgroundRenderer.frameWindow(image, scale: scale, style: Settings.shared.windowStyle)
-                deliver(Capture(image: framed ?? image, scale: scale))
+                deliver(Capture(image: framed ?? image, scale: scale).from(SourceApp.owner(of: id)))
             } catch {
                 showCaptureError(error)
             }

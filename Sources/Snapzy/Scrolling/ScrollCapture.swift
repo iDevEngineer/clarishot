@@ -98,6 +98,7 @@ final class ScrollCaptureCoordinator {
 
     private func done() {
         guard let session, let screen else { return }
+        let source = SourceApp.under(globalRect)
         autoScroller?.stop()
         autoScroller = nil
         controls?.setBusy()
@@ -105,7 +106,7 @@ final class ScrollCaptureCoordinator {
             let image = await session.finish()
             cleanUp()
             guard let image else { Toast.show("Nothing was captured"); return }
-            CaptureCoordinator.shared.deliver(Capture(image: image, scale: screen.backingScaleFactor))
+            CaptureCoordinator.shared.deliver(Capture(image: image, scale: screen.backingScaleFactor).from(source))
         }
     }
 

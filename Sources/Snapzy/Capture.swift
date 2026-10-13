@@ -12,6 +12,14 @@ final class Capture {
     let sourceVideoURL: URL?
     let duration: Double
     let date = Date()
+    /// Bundle ID of the app the capture came from (for Capture History's icon).
+    var sourceBundleID: String?
+
+    /// Sets the source app and returns self, for chaining.
+    func from(_ bundleID: String?) -> Capture {
+        sourceBundleID = bundleID
+        return self
+    }
 
     init(image: CGImage, scale: CGFloat) {
         self.image = image
@@ -48,7 +56,7 @@ final class Capture {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let scaled = ctx.makeImage() else { return self }
-        return Capture(image: scaled, scale: 1)
+        return Capture(image: scaled, scale: 1).from(sourceBundleID)
     }
 
     // MARK: Files

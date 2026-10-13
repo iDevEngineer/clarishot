@@ -29,6 +29,8 @@ final class HistoryStore {
         let duration: Double
         let pixelWidth: Int
         let pixelHeight: Int
+        /// The app it was captured from; missing for older captures.
+        var sourceBundleID: String?
     }
 
     private(set) var items: [Item] = []
@@ -73,7 +75,7 @@ final class HistoryStore {
         }
         items.insert(Item(id: id, date: capture.date, kind: kind, file: file, scale: capture.scale,
                           duration: capture.duration, pixelWidth: capture.image.width,
-                          pixelHeight: capture.image.height), at: 0)
+                          pixelHeight: capture.image.height, sourceBundleID: capture.sourceBundleID), at: 0)
         save()
     }
 

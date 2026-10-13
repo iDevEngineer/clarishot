@@ -2,7 +2,7 @@ import AppKit
 
 /// Capture History as a dark strip across the top of the screen: filters centred at the
 /// top, a "…" menu on the right, and a row of captures that scrolls sideways.
-/// Click to select (shows Restore), double-click to restore, right-click for more.
+/// Hover a capture to show Restore; double-click also restores; right-click for more.
 /// Esc or clicking elsewhere closes it.
 @MainActor
 final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionViewDataSource, NSCollectionViewDelegate {
@@ -106,7 +106,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
         layout.minimumLineSpacing = 14
         layout.sectionInset = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         collection.collectionViewLayout = layout
-        collection.isSelectable = true
+        collection.isSelectable = false
         collection.dataSource = self
         collection.delegate = self
         collection.backgroundColors = [.clear]
@@ -306,7 +306,7 @@ final class HistoryFilterPill: NSView {
     }
 }
 
-/// One capture: thumbnail with a type badge, and "10 minutes ago" — or a Restore pill when selected.
+/// One capture: thumbnail with its app's icon, and "24 minutes" — or a Restore pill while hovered.
 @MainActor
 final class HistoryCell: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("HistoryCell")
@@ -323,6 +323,7 @@ final class HistoryCell: NSCollectionViewItem {
         let root = CellView()
         root.onDoubleClick = { [weak self] in self?.onRestore?() }
         root.onMenu = { [weak self] in self?.menuProvider?() }
+        root.onHover = { [weak self] hovering in self?.setHover(hovering) }
 
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
@@ -356,8 +357,8 @@ final class HistoryCell: NSCollectionViewItem {
             thumb.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             thumb.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
             thumb.heightAnchor.constraint(equalToConstant: 84),
-            badge.widthAnchor.constraint(equalToConstant: 18),
-            badge.heightAnchor.constraint(equalToConstant: 18),
+            badge.widthAnchor.constraint(equalToConstant: 22),
+            badge.heightAnchor.constraint(equalToConstant: 22),
             badge.trailingAnchor.constraint(equalTo: thumb.trailingAnchor, constant: -5),
             badge.bottomAnchor.constraint(equalTo: thumb.bottomAnchor, constant: -5),
             timeLabel.topAnchor.constraint(equalTo: thumb.bottomAnchor, constant: 8),
@@ -368,28 +369,38 @@ final class HistoryCell: NSCollectionViewItem {
         view = root
     }
 
-    override var isSelected: Bool {
-        didSet {
-            thumb.layer?.borderWidth = isSelected ? 2.5 : 0
-            restoreButton.isHidden = !isSelected
-            timeLabel.isHidden = isSelected
-        }
+    private func setHover(_ hovering: Bool) {
+        thumb.layer?.borderWidth = hovering ? 2.5 : 0
+        restoreButton.isHidden = !hovering
+        timeLabel.isHidden = hovering
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        setHover(false)
     }
 
     func configure(_ item: HistoryStore.Item) {
         itemID = item.id
-        let relative = RelativeDateTimeFormatter()
-        relative.unitsStyle = .full
-        timeLabel.stringValue = relative.localizedString(for: item.date, relativeTo: Date())
-        let (symbol, color): (String, NSColor) = {
-            switch item.kind {
-            case .screenshot: return ("photo", .systemRed)
-            case .recording: return ("video.fill", .systemBlue)
-            case .gif: return ("sparkles", .systemPurple)
-            }
-        }()
-        badge.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.kind.title)
-        badge.layer?.backgroundColor = color.cgColor
+        timeLabel.stringValue = Self.age(of: item.date)
+        if let bundle = item.sourceBundleID, let icon = SourceApp.icon(for: bundle) {
+            // The app it came from, e.g. the browser's own icon.
+            badge.image = icon
+            badge.symbolConfiguration = nil
+            badge.layer?.backgroundColor = nil
+            badge.imageScaling = .scaleProportionallyUpOrDown
+        } else {
+            let (symbol, color): (String, NSColor) = {
+                switch item.kind {
+                case .screenshot: return ("photo", .systemRed)
+                case .recording: return ("video.fill", .systemBlue)
+                case .gif: return ("sparkles", .systemPurple)
+                }
+            }()
+            badge.symbolConfiguration = .init(pointSize: 9, weight: .bold)
+            badge.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.kind.title)
+            badge.layer?.backgroundColor = color.cgColor
+        }
         let size = "\(Int(Double(item.pixelWidth) / item.scale)) × \(Int(Double(item.pixelHeight) / item.scale))"
         view.toolTip = "\(item.kind == .screenshot ? "Screenshot" : item.kind == .gif ? "GIF" : "Recording") · \(size)"
         thumb.image = nil
@@ -399,10 +410,32 @@ final class HistoryCell: NSCollectionViewItem {
         }
     }
 
+    /// "Just now", "24 minutes", "4 days", "1 month"…
+    private static func age(of date: Date) -> String {
+        let seconds = Date().timeIntervalSince(date)
+        if seconds < 60 { return "Just now" }
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.maximumUnitCount = 1
+        formatter.allowedUnits = [.minute, .hour, .day, .weekOfMonth, .month, .year]
+        return formatter.string(from: seconds) ?? ""
+    }
+
     /// Handles double-click and right-click for the tile.
     private final class CellView: NSView {
         var onDoubleClick: (() -> Void)?
         var onMenu: (() -> NSMenu?)?
+        var onHover: ((Bool) -> Void)?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                           owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
 
         override func mouseDown(with event: NSEvent) {
             super.mouseDown(with: event)

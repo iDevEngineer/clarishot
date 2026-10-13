@@ -20,6 +20,8 @@ final class RecordingCoordinator {
     private var format: RecordingFormat = .video
     private var region: (screen: NSScreen, rect: CGRect)?
     private var busy = false
+    /// The app under the recorded area when recording started.
+    private var sourceBundleID: String?
 
     var isRecording: Bool { recorder != nil }
 
@@ -179,6 +181,7 @@ final class RecordingCoordinator {
     @available(macOS 15.0, *)
     private func startRecorder() async {
         guard let region, let globalRect else { busy = false; return }
+        sourceBundleID = SourceApp.under(globalRect)
         if options.countdown {
             let countdown = CountdownWindow(centeredIn: globalRect)
             guard await countdown.run() else { busy = false; cancelAll(); return }
@@ -342,6 +345,7 @@ final class RecordingCoordinator {
             }
             let capture = Capture(videoURL: fileURL, thumbnail: thumbnail, scale: 1, duration: duration,
                                   sourceVideoURL: format == .gif ? url : nil)
+            capture.sourceBundleID = sourceBundleID
             HistoryStore.shared.add(capture)
             PreviewManager.shared.show(capture)
         }
