@@ -7,9 +7,10 @@ import Foundation
 /// across a few columns) for vertical scrolling, or per column for horizontal.
 /// The scroll distance is the shift that best lines up the new frame's
 /// signature with the previous one. Scrolling works both ways: the stitcher
-/// tracks where the current frame sits in the image, adds new content at the
-/// end (or at the start, if you scroll above where you began), and ignores
-/// content it already has. Not thread-safe: use from one queue.
+/// tracks where the current frame sits. Scrolling on adds new content at the
+/// end; scrolling back trims the end so the capture always stops at the bottom
+/// of the area; scrolling above where you began adds that content at the start.
+/// Not thread-safe: use from one queue.
 final class ScrollStitcher {
     enum Axis { case vertical, horizontal }
 
@@ -33,10 +34,13 @@ final class ScrollStitcher {
     private(set) var length: Int
 
     private let first: CGImage
-    /// Pieces before and after the first frame, in on-screen order.
-    private var before: [CGImage] = []
-    private var after: [CGImage] = []
-    /// Where the reference frame starts within the stitched image.
+    /// Image pieces and where each starts. Positions are measured from the first
+    /// frame's start, so content above it has negative offsets. Later pieces draw on top.
+    private var pieces: [(offset: Int, image: CGImage)]
+    /// The captured range: from `top` to `bottom` (exclusive).
+    private var top = 0
+    private var bottom: Int
+    /// Where the reference frame starts.
     private var position = 0
     private var reference: CGImage
     private var referenceSignatures: [Axis: Signature] = [:]
@@ -48,6 +52,8 @@ final class ScrollStitcher {
         frameWidth = firstFrame.width
         frameHeight = firstFrame.height
         length = firstFrame.height
+        bottom = firstFrame.height
+        pieces = [(0, firstFrame)]
     }
 
     var pixelSize: (width: Int, height: Int) {
@@ -80,33 +86,39 @@ final class ScrollStitcher {
 
         if axis == nil {
             axis = match.axis
+            bottom = frameLength
             length = frameLength
         }
-        var newPosition = position + match.offset
+        let newPosition = position + match.offset
+        let end = newPosition + frameLength
         var added = 0
 
-        // Scrolled above where we started: add the newly revealed start.
-        if newPosition < 0 {
-            let extra = min(-newPosition, Self.maxLength - length)
-            guard extra > 0 else { return .limitReached }
-            guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: extra, fromStart: true) else { return .lost }
-            before.insert(strip, at: 0)
-            length += extra
-            added += extra
-            newPosition = 0
-        }
-
-        // Scrolled past the end: add the newly revealed end.
-        let end = newPosition + frameLength
-        if end > length {
-            let extra = min(end - length, Self.maxLength - length)
+        if match.offset < 0 {
+            // Scrolled back: the capture now ends at the bottom of the area.
+            if end < bottom {
+                bottom = end
+                pieces.removeAll { $0.offset >= bottom }
+            }
+            // Scrolled above where we started: add the newly revealed start.
+            if newPosition < top {
+                let extra = min(top - newPosition, Self.maxLength - (bottom - top))
+                guard extra > 0 else { return .limitReached }
+                guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: extra, fromStart: true) else { return .lost }
+                top -= extra
+                pieces.append((top, strip))
+                added = extra
+            }
+        } else if end > bottom {
+            // Scrolled on past the end: add the newly revealed end.
+            let extra = min(end - bottom, Self.maxLength - (bottom - top))
             guard extra > 0 else { return .limitReached }
             guard let strip = Self.copyStrip(of: frame, axis: match.axis, length: extra, fromStart: false) else { return .lost }
-            after.append(strip)
-            length += extra
-            added += extra
+            pieces.append((bottom, strip))
+            bottom += extra
+            added = extra
         }
 
+        length = bottom - top
         position = newPosition
         reference = frame
         referenceSignatures = [:]
@@ -137,15 +149,14 @@ final class ScrollStitcher {
         ctx.interpolationQuality = scale < 1 ? .medium : .none
         ctx.scaleBy(x: scale, y: scale)
 
-        // Place pieces from the start (top or left). CG's origin is bottom-left.
-        var cursor = 0
-        for piece in before + [first] + after {
+        // Place each piece at its offset from `top`; anything past `bottom` falls off
+        // the canvas. CG's origin is bottom-left.
+        for (offset, piece) in pieces {
+            let at = offset - top
             if axis == .horizontal {
-                ctx.draw(piece, in: CGRect(x: cursor, y: 0, width: piece.width, height: piece.height))
-                cursor += piece.width
+                ctx.draw(piece, in: CGRect(x: at, y: 0, width: piece.width, height: piece.height))
             } else {
-                ctx.draw(piece, in: CGRect(x: 0, y: h - cursor - piece.height, width: piece.width, height: piece.height))
-                cursor += piece.height
+                ctx.draw(piece, in: CGRect(x: 0, y: h - at - piece.height, width: piece.width, height: piece.height))
             }
         }
         return ctx.makeImage()
