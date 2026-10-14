@@ -102,13 +102,8 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
     // MARK: Layout
 
     private func buildContent() {
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.blendingMode = .behindWindow
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 16
-        background.layer?.masksToBounds = true
+        // No outer box: each section is its own frosted card with a gap between them.
+        let background = NSView()
 
         // Card 1: size row + option toggles.
         for field in [widthField, heightField] { field.delegate = self }
@@ -129,7 +124,7 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
             ("speaker.slash", "speaker.wave.2.fill", "Record computer audio", \.systemAudio),
             ("video.slash", "video.fill", "Show camera", \.camera),
             ("cursorarrow.click", "cursorarrow.click.2", "Highlight clicks", \.highlightClicks),
-            ("command", "command", "Show keystrokes", \.showKeystrokes)
+            ("command.square", "command.square.fill", "Show keystrokes", \.showKeystrokes)
         ]
         toggles = toggleSpecs.map { off, on, tip, path in
             let button = PanelIconButton(symbol: off, onSymbol: on, tip: tip)
@@ -159,7 +154,7 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
 
         let stack = NSStackView(views: [card1, card2])
         stack.orientation = .vertical
-        stack.spacing = 8
+        stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(stack)
@@ -178,20 +173,36 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
     }
 
     /// Slightly lighter rounded box grouping controls.
+    /// A frosted dark card with a faint light edge.
     private func card(_ views: [NSView], spacing: CGFloat = 8, padding: CGFloat = 8) -> NSView {
+        let blur = NSVisualEffectView()
+        blur.material = .hudWindow
+        blur.state = .active
+        blur.blendingMode = .behindWindow
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 18
+        blur.layer?.masksToBounds = true
+        blur.layer?.borderWidth = 1
+        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = spacing
-        stack.edgeInsets = NSEdgeInsets(top: padding, left: padding, bottom: padding, right: padding)
-        stack.wantsLayer = true
-        stack.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
-        stack.layer?.cornerRadius = 12
+        stack.edgeInsets = NSEdgeInsets(top: padding + 2, left: padding + 2, bottom: padding + 2, right: padding + 2)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        blur.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: blur.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: blur.bottomAnchor)
+        ])
         for v in views {
             v.translatesAutoresizingMaskIntoConstraints = false
-            v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * padding).isActive = true
+            v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * (padding + 2)).isActive = true
         }
-        return stack
+        return blur
     }
 
     private func horizontalDivider() -> NSView {

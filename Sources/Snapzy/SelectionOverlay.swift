@@ -538,7 +538,7 @@ final class OverlayView: NSView {
         // While an instruction pill shows (before any area is chosen), dim the whole screen.
         let showsHint = pickingWindow || (hint != nil && selection == nil)
         if showsHint {
-            ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.6).cgColor)
             ctx.fill(bounds)
         }
 
@@ -596,7 +596,7 @@ final class OverlayView: NSView {
             path.addRect(bounds)
             path.addRect(rect)
             ctx.addPath(path)
-            ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.55).cgColor)
             ctx.fillPath(using: .evenOdd)
 
             ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.9).cgColor)
