@@ -24,6 +24,25 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var cropStart: CGPoint?
     private var cropDraft: CGRect?
     private var selectedIndex: Int?
+    /// Dragging one end of a selected arrow or line (`isStart` picks which end).
+    private var draggingEnd: (index: Int, isStart: Bool)?
+
+    /// The selected arrow or line, if any — these show draggable end handles.
+    private var selectedLineIndex: Int? {
+        guard let index = selectedIndex, document.annotations.indices.contains(index),
+              [.arrow, .line].contains(document.annotations[index].tool) else { return nil }
+        return index
+    }
+
+    /// Which end handle (if any) is under a point in view coordinates.
+    private func endHandle(at viewPoint: CGPoint) -> (index: Int, isStart: Bool)? {
+        guard let index = selectedLineIndex else { return nil }
+        let a = document.annotations[index]
+        func near(_ p: CGPoint) -> Bool { hypot(toView(p).x - viewPoint.x, toView(p).y - viewPoint.y) <= 11 }
+        if near(a.end) { return (index, false) }
+        if near(a.start) { return (index, true) }
+        return nil
+    }
     private var lastDragPoint: CGPoint?
     private var movedSinceMouseDown = false
     private var textField: NSTextField?
@@ -158,7 +177,19 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             ctx.restoreGState()
         }
 
-        if let index = selectedIndex, document.annotations.indices.contains(index) {
+        if let index = selectedLineIndex {
+            // Arrows and lines: a round handle on each end instead of a box.
+            let a = document.annotations[index]
+            for point in [a.start, a.end] {
+                let c = toView(point)
+                let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12))
+                NSColor.controlAccentColor.setFill()
+                dot.fill()
+                NSColor.white.setStroke()
+                dot.lineWidth = 2
+                dot.stroke()
+            }
+        } else if let index = selectedIndex, document.annotations.indices.contains(index) {
             let outline = NSBezierPath(roundedRect: toView(document.annotations[index].bounds), xRadius: 4, yRadius: 4)
             outline.lineWidth = 1
             outline.setLineDash([4, 3], count: 2, phase: 0)
@@ -206,8 +237,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         commitText()
         window?.makeFirstResponder(self)
-        let p = toImage(convert(event.locationInWindow, from: nil))
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let p = toImage(viewPoint)
         movedSinceMouseDown = false
+
+        // Grab an end of the selected arrow or line, whichever tool is active.
+        if let handle = endHandle(at: viewPoint) {
+            draggingEnd = handle
+            return
+        }
 
         // Double-click a text label (with any tool) to edit it.
         if event.clickCount == 2,
@@ -218,6 +256,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             return
         }
 
+        // Starting something new deselects the previous arrow (its handles disappear).
+        if tool != .select { selectedIndex = nil }
         switch tool {
         case .select:
             selectedIndex = document.annotations.indices.last { document.annotations[$0].bounds.contains(p) }
@@ -241,6 +281,17 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     override func mouseDragged(with event: NSEvent) {
         var p = toImage(convert(event.locationInWindow, from: nil))
         let shift = event.modifierFlags.contains(.shift)
+
+        if let handle = draggingEnd, document.annotations.indices.contains(handle.index) {
+            if !movedSinceMouseDown { document.checkpoint(); movedSinceMouseDown = true }
+            var a = document.annotations[handle.index]
+            let anchor = handle.isStart ? a.end : a.start
+            if shift { p = constrained(p, from: anchor, tool: a.tool) }
+            if handle.isStart { a.start = p } else { a.end = p }
+            document.annotations[handle.index] = a
+            needsDisplay = true
+            return
+        }
 
         switch tool {
         case .select:
@@ -289,6 +340,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if draggingEnd != nil {
+            draggingEnd = nil
+            if movedSinceMouseDown { changed() }
+            needsDisplay = true
+            return
+        }
         if var d = draft {
             draft = nil
             let settings = Settings.shared
@@ -300,6 +357,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if !d.isEmpty {
                 document.checkpoint()
                 document.annotations.append(d)
+                // A new arrow or line stays selected, so its ends can be adjusted straight away.
+                if d.tool == .arrow || d.tool == .line { selectedIndex = document.annotations.count - 1 }
                 changed()
             }
         }
