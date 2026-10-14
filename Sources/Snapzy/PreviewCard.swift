@@ -138,10 +138,9 @@ final class PreviewPanel: NSPanel {
 final class PreviewCardView: NSView, NSDraggingSource {
     var onDismiss: (() -> Void)?
 
-    private static let maxSize = CGSize(width: 240, height: 280)
-    private static let minSide: CGFloat = 110
-    /// Wide captures still get a reasonably tall card (the image is cropped to fill it).
-    private static let minHeight: CGFloat = 170
+    /// Every card is the same size and shape as the history thumbnails (3:2);
+    /// the capture is cropped to fill it.
+    private static let size = CGSize(width: 240, height: 160)
     private static let radius: CGFloat = 12
     private let capture: Capture
     private let thumbRect: CGRect
@@ -150,13 +149,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     init(capture: Capture) {
         self.capture = capture
-        // The card is the image itself, no border: fit it in the max size, but keep
-        // very thin images (e.g. long scrolling captures) from becoming slivers.
-        let size = capture.pointSize
-        let fit = min(Self.maxSize.width / max(size.width, 1), Self.maxSize.height / max(size.height, 1))
-        let width = min(max((size.width * fit).rounded(), Self.minSide), Self.maxSize.width)
-        let height = min(max((size.height * fit).rounded(), Self.minHeight), Self.maxSize.height)
-        thumbRect = CGRect(x: 0, y: 0, width: width, height: height)
+        thumbRect = CGRect(origin: .zero, size: Self.size)
         super.init(frame: thumbRect)
         setUp()
     }
