@@ -388,6 +388,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Helpers
 
     private func changed() {
+        document.expandToFitAnnotations()
         needsDisplay = true
         onChange?()
     }

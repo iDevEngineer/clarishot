@@ -422,6 +422,12 @@ final class Settings {
         set { set(newValue, "smoothDrawing") }
     }
 
+    /// Grow the canvas so annotations drawn past the image edge are kept.
+    var annotateAutoExpand: Bool {
+        get { bool("autoExpandCanvas", default: false) }
+        set { set(newValue, "autoExpandCanvas") }
+    }
+
     var annotateColorNames: Bool {
         get { bool("colorNames", default: false) }
         set { set(newValue, "colorNames") }
@@ -442,7 +448,7 @@ final class Settings {
     // MARK: Reset
 
     func resetAll() {
-        for key in ["inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
+        for key in ["autoExpandCanvas", "inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
                     "afterRecCopy", "afterRecSave", "previewScale", "autoCloseSaves", "saveButtonAsks",
                     "wallpaperFollowsSpaces", "convertToSRGB", "addBorder", "windowPadding", "annotateOnTop",
                     "annotateDockIcon", "annotateRememberBackground", "annotateShadows", "askForName", "retinaSuffix",

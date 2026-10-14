@@ -487,6 +487,16 @@ final class AnnotateDocument {
         crop = s.crop
     }
 
+    /// "Automatically expand canvas": grows the canvas (never shrinks it) to take in every
+    /// annotation plus a small margin. Space outside the picture stays transparent.
+    /// Runs as part of the change that caused it, so one Undo reverts both.
+    func expandToFitAnnotations() {
+        guard Settings.shared.annotateAutoExpand else { return }
+        var area = crop
+        for a in annotations where !a.isEmpty { area = area.union(a.bounds.insetBy(dx: -8, dy: -8)) }
+        if area != crop { crop = area.integral }
+    }
+
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
     var nextCounterNumber: Int { (annotations.filter { $0.tool == .counter }.map(\.number).max() ?? 0) + 1 }

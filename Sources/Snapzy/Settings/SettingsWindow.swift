@@ -841,7 +841,9 @@ final class AnnotatePane: SettingsPane {
             row("Smooth drawing", toggle({ s.annotateSmoothDrawing }, { s.annotateSmoothDrawing = $0 })),
             row("Remember if background tool was opened", toggle({ s.annotateRememberBackground },
                                                                  { s.annotateRememberBackground = $0 })),
-            row("Draw shadow on objects", toggle({ s.annotateShadows }, { s.annotateShadows = $0 }))
+            row("Draw shadow on objects", toggle({ s.annotateShadows }, { s.annotateShadows = $0 })),
+            row("Automatically expand canvas", toggle({ s.annotateAutoExpand }, { s.annotateAutoExpand = $0 }),
+                note: "Ensures all annotations fit by dynamically resizing canvas.")
         ])
         section("Window", [
             row("Always on top", toggle({ s.annotateAlwaysOnTop }, { s.annotateAlwaysOnTop = $0 })),
