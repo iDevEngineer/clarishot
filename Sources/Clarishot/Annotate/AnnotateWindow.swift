@@ -78,7 +78,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private static func initialFrame(for imageSize: CGSize) -> CGRect {
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let width = min(max(imageSize.width + 120, 1080), visible.width * 0.9)
-        let height = min(max(imageSize.height + toolbarHeight + bottomBarHeight + 120, 500), visible.height * 0.85)
+        let height = min(max(imageSize.height + toolbarHeight + 40 + bottomBarHeight + 120, 540), visible.height * 0.85)
         return CGRect(x: visible.midX - width / 2, y: visible.midY - height / 2, width: width, height: height)
     }
 
@@ -94,7 +94,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
         let toolbar = ToolbarView()
         let bottomBar = ToolbarView(edge: .top)
-        for view in [toolbar, bottomBar, canvas] as [NSView] {
+        for view in [toolbar, propertiesBar, bottomBar, canvas] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
@@ -126,10 +126,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         widthButton.onClick = { [weak self] in self?.showStrokeMenu() }
         lockButton.onClick = { [weak self] in self?.toggleCanvasLock() }
         imageButton.onClick = { [weak self] in self?.showImageMenu() }
-        let styleGroup = NSStackView(views: [Self.capsule([colorButton, Self.chevron()]),
-                                             Self.capsule([widthButton, Self.chevron()]),
-                                             Self.capsule([lockButton]),
-                                             Self.capsule([imageButton])])
+        let styleGroup = NSStackView(views: [Self.capsule([lockButton]), Self.capsule([imageButton])])
         styleGroup.spacing = 6
         updateLockIcon()
 
@@ -189,7 +186,12 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             bottomBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             bottomBar.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
 
-            canvas.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            propertiesBar.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            propertiesBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            propertiesBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            propertiesBar.heightAnchor.constraint(equalToConstant: 40),
+
+            canvas.topAnchor.constraint(equalTo: propertiesBar.bottomAnchor),
             canvas.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
             canvas.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             canvas.trailingAnchor.constraint(equalTo: content.trailingAnchor),
@@ -217,6 +219,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             self?.updateZoomLabel()
         }
         canvas.onToolShortcut = { [weak self] tool in self?.selectTool(tool) }
+        canvas.onSelectionChange = { [weak self] in self?.refreshProperties() }
         DispatchQueue.main.async { [weak self] in self?.updateZoomLabel() }
     }
 
@@ -334,6 +337,236 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         canvas.tool = tool
         for (t, button) in toolButtons { button.isSelected = t == tool }
         window.makeFirstResponder(canvas)
+        refreshProperties()
+    }
+
+    // MARK: Properties bar
+
+    private let propertiesBar = PropertiesBarView()
+    private var propertyTargets: [Callback] = []
+
+    /// Rebuilds the properties bar for the selected shape, or else the current tool.
+    private func refreshProperties() {
+        propertyTargets.removeAll()
+        let selected = canvas.selectedAnnotation
+        let tool = selected?.tool ?? canvas.tool
+        var items: [NSView] = []
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        icon.contentTintColor = .controlAccentColor
+        items.append(Self.badge(icon))
+
+        let drawsLines: Set<Tool> = [.rectangle, .ellipse, .line, .arrow, .pencil, .highlighter]
+        let hasColor: Set<Tool> = drawsLines.union([.filledRectangle, .text, .counter])
+
+        if hasColor.contains(tool) {
+            colorButton.color = selected?.color ?? canvas.color
+            items.append(group("Color", [colorButton]))
+        }
+        if drawsLines.contains(tool) || [.text, .counter, .filledRectangle].contains(tool) {
+            let title = tool == .text ? "Size" : (tool == .counter ? "Size" : "Stroke")
+            items.append(group(title, [strokeSlider(value: selected?.lineWidth ?? canvas.lineWidth)]))
+        }
+        if [.rectangle, .ellipse, .line, .arrow].contains(tool) {
+            let dash = selected.map(\.lineDash) ?? canvas.lineDash
+            let control = segmented(LineDash.allCases.map { Self.dashImage($0) }, selected: dash.rawValue,
+                                    tips: LineDash.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.lineDash = LineDash(rawValue: i) ?? .solid
+                self?.applyToSelection()
+            }
+            if tool == .arrow { control.isEnabled = (selected?.arrowLook ?? canvas.arrowType) == .classic }
+            items.append(group("Line Style", [control]))
+        }
+        if tool == .arrow {
+            let style = selected?.arrowStyle ?? canvas.arrowStyle
+            items.append(group("Style", [segmented(["arrow.up.right", "arrow.turn.up.right"].map(Self.symbol), selected: style.rawValue,
+                                                   tips: ArrowStyle.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.arrowStyle = ArrowStyle(rawValue: i) ?? .straight
+                self?.applyToSelection()
+            }]))
+            let look = selected?.arrowLook ?? canvas.arrowType
+            items.append(group("Display", [segmented(["arrowtriangle.right.fill", "arrow.right", "arrowtriangle.right"].map(Self.symbol),
+                                                     selected: look.rawValue, tips: ArrowType.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.arrowType = ArrowType(rawValue: i) ?? .tapered
+                self?.applyToSelection()
+                self?.refreshProperties()
+            }]))
+            let classic = look == .classic
+            let start = segmented(Self.headImages(pointingRight: false), selected: (selected?.startEnd ?? canvas.startHead).rawValue,
+                                  tips: ArrowHead.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.startHead = ArrowHead(rawValue: i) ?? .none
+                self?.applyToSelection()
+            }
+            let end = segmented(Self.headImages(pointingRight: true), selected: (selected?.endEnd ?? canvas.endHead).rawValue,
+                                tips: ArrowHead.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.endHead = ArrowHead(rawValue: i) ?? .arrow
+                self?.applyToSelection()
+            }
+            start.isEnabled = classic
+            end.isEnabled = classic
+            items.append(group("Start", [start]))
+            items.append(group("End", [end]))
+        }
+        if tool == .text {
+            let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+            popup.isBordered = false
+            popup.addItems(withTitles: TextStyle.allCases.map(\.title))
+            popup.selectItem(at: (selected?.textStyle ?? canvas.textStyle).rawValue)
+            bind(popup) { [weak self, weak popup] in
+                self?.canvas.textStyle = TextStyle(rawValue: popup?.indexOfSelectedItem ?? 0) ?? .outline
+                self?.applyToSelection()
+            }
+            items.append(group("Style", [popup]))
+        }
+        if tool == .crop {
+            let ratios: [(String, CGFloat?)] = [("Free", nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("9:16", 9.0 / 16)]
+            let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+            popup.isBordered = false
+            popup.addItems(withTitles: ratios.map(\.0))
+            popup.selectItem(at: ratios.firstIndex { $0.1 == canvas.cropAspect } ?? 0)
+            bind(popup) { [weak self, weak popup] in self?.canvas.cropAspect = ratios[popup?.indexOfSelectedItem ?? 0].1 }
+            items.append(group("Aspect Ratio", [popup]))
+            let snap = NSSwitch()
+            snap.controlSize = .mini
+            snap.state = Settings.shared.annotateSnapToEdges ? .on : .off
+            bind(snap) { [weak snap] in Settings.shared.annotateSnapToEdges = snap?.state == .on }
+            items.append(group("Snap to Edges", [snap]))
+        }
+        if tool == .highlighter {
+            let snap = NSSwitch()
+            snap.controlSize = .mini
+            snap.state = Settings.shared.annotateSnapHighlight ? .on : .off
+            bind(snap) { [weak snap] in Settings.shared.annotateSnapHighlight = snap?.state == .on }
+            items.append(group("Snap to Text", [snap]))
+        }
+        if [.select, .pixelate, .blur, .spotlight].contains(tool), selected == nil {
+            let hint = NSTextField(labelWithString: tool == .select ? "Click a shape to edit it. Drag to move it." : "Drag over the area to cover.")
+            hint.font = .systemFont(ofSize: 11)
+            hint.textColor = .secondaryLabelColor
+            items.append(hint)
+        }
+        propertiesBar.show(items)
+    }
+
+    private func applyToSelection() {
+        guard canvas.selectedAnnotation != nil else { return }
+        canvas.applyStyleToSelection()
+    }
+
+    private func strokeSlider(value: CGFloat) -> NSView {
+        let slider = NSSlider(value: Double(value), minValue: 1, maxValue: 20, target: nil, action: nil)
+        slider.controlSize = .small
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        let label = NSTextField(labelWithString: "\(Int(value))")
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        bind(slider) { [weak self, weak slider] in
+            guard let self, let slider else { return }
+            let v = CGFloat(slider.doubleValue.rounded())
+            label.stringValue = "\(Int(v))"
+            self.canvas.lineWidth = v
+            // Live while dragging; one undo step per change is fine for a toolbar slider.
+            if self.canvas.selectedAnnotation != nil { self.canvas.applyStyleToSelection() }
+        }
+        let stack = NSStackView(views: [slider, label])
+        stack.spacing = 6
+        return stack
+    }
+
+    private func segmented(_ images: [NSImage], selected: Int, tips: [String], change: @escaping (Int) -> Void) -> NSSegmentedControl {
+        let control = NSSegmentedControl(images: images, trackingMode: .selectOne, target: nil, action: nil)
+        control.controlSize = .small
+        control.segmentStyle = .automatic
+        control.selectedSegment = selected
+        for (i, tip) in tips.enumerated() where i < control.segmentCount { control.setToolTip(tip, forSegment: i) }
+        bind(control) { [weak control] in change(control?.selectedSegment ?? 0) }
+        return control
+    }
+
+    private func group(_ title: String, _ views: [NSView]) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [label] + views)
+        stack.spacing = 6
+        return stack
+    }
+
+    private func bind(_ control: NSControl, _ action: @escaping () -> Void) {
+        let target = Callback { _ in action() }
+        propertyTargets.append(target)
+        control.target = target
+        control.action = #selector(Callback.fire(_:))
+    }
+
+    private static func badge(_ view: NSView) -> NSView {
+        let box = NSView()
+        box.wantsLayer = true
+        box.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+        box.layer?.cornerRadius = 12
+        view.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(view)
+        NSLayoutConstraint.activate([
+            box.widthAnchor.constraint(equalToConstant: 24), box.heightAnchor.constraint(equalToConstant: 24),
+            view.centerXAnchor.constraint(equalTo: box.centerXAnchor), view.centerYAnchor.constraint(equalTo: box.centerYAnchor)
+        ])
+        return box
+    }
+
+    private static func symbol(_ name: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)) ?? NSImage()
+    }
+
+    /// Little pictures of solid / dashed / dotted lines.
+    private static func dashImage(_ dash: LineDash) -> NSImage {
+        let image = NSImage(size: CGSize(width: 22, height: 12), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: 1, y: rect.midY)); path.line(to: CGPoint(x: rect.maxX - 1, y: rect.midY))
+            path.lineWidth = 2
+            switch dash {
+            case .solid: break
+            case .dashed: path.setLineDash([5, 3], count: 2, phase: 0)
+            case .dotted: path.lineCapStyle = .round; path.setLineDash([0, 4], count: 2, phase: 0)
+            }
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// None / arrowhead / dot pictures for one end of an arrow.
+    private static func headImages(pointingRight: Bool) -> [NSImage] {
+        ArrowHead.allCases.map { head in
+            let image = NSImage(size: CGSize(width: 16, height: 12), flipped: false) { rect in
+                NSColor.black.set()
+                switch head {
+                case .none:
+                    let line = NSBezierPath()
+                    line.move(to: CGPoint(x: 2, y: rect.midY)); line.line(to: CGPoint(x: rect.maxX - 2, y: rect.midY))
+                    line.lineWidth = 1.5
+                    line.stroke()
+                case .dot:
+                    NSBezierPath(ovalIn: CGRect(x: rect.midX - 4, y: rect.midY - 4, width: 8, height: 8)).fill()
+                case .arrow:
+                    let tri = NSBezierPath()
+                    if pointingRight {
+                        tri.move(to: CGPoint(x: 3, y: 1)); tri.line(to: CGPoint(x: rect.maxX - 2, y: rect.midY)); tri.line(to: CGPoint(x: 3, y: rect.maxY - 1))
+                    } else {
+                        tri.move(to: CGPoint(x: rect.maxX - 3, y: 1)); tri.line(to: CGPoint(x: 2, y: rect.midY)); tri.line(to: CGPoint(x: rect.maxX - 3, y: rect.maxY - 1))
+                    }
+                    tri.close()
+                    tri.fill()
+                }
+                return true
+            }
+            image.isTemplate = true
+            return image
+        }
     }
 
     private func showColors() {
@@ -788,5 +1021,49 @@ final class DragOutHandle: NSView, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         context == .outsideApplication ? .copy : []
+    }
+}
+
+/// The row under the toolbar holding the current tool's or shape's settings.
+final class PropertiesBarView: NSVisualEffectView {
+    private let stack = NSStackView()
+
+    init() {
+        super.init(frame: .zero)
+        material = .titlebar
+        blendingMode = .withinWindow
+        stack.spacing = 18
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        let border = NSBox()
+        border.boxType = .separator
+        border.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(border)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            border.leadingAnchor.constraint(equalTo: leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: trailingAnchor),
+            border.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func show(_ items: [NSView]) {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for (index, item) in items.enumerated() {
+            if index > 0 {
+                let line = NSBox()
+                line.boxType = .separator
+                line.translatesAutoresizingMaskIntoConstraints = false
+                line.heightAnchor.constraint(equalToConstant: 18).isActive = true
+                line.widthAnchor.constraint(equalToConstant: 1).isActive = true
+                stack.addArrangedSubview(line)
+            }
+            stack.addArrangedSubview(item)
+        }
     }
 }

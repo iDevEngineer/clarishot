@@ -76,6 +76,53 @@ enum ArrowStyle: Int, CaseIterable {
     var title: String { self == .straight ? "Straight" : "Curved" }
 }
 
+/// How an arrow is drawn: a tapered shape, a line with separate heads, or a hollow outline.
+enum ArrowType: Int, CaseIterable {
+    case tapered, classic, outlined
+    var title: String {
+        switch self {
+        case .tapered: return "Tapered"
+        case .classic: return "Classic"
+        case .outlined: return "Outlined"
+        }
+    }
+}
+
+/// What sits on each end of a classic arrow.
+enum ArrowHead: Int, CaseIterable {
+    case none, arrow, dot
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .arrow: return "Arrow"
+        case .dot: return "Dot"
+        }
+    }
+}
+
+/// Solid, dashed or dotted outlines for shapes, lines and classic arrows.
+enum LineDash: Int, CaseIterable {
+    case solid, dashed, dotted
+    var title: String {
+        switch self {
+        case .solid: return "Solid"
+        case .dashed: return "Dashed"
+        case .dotted: return "Dotted"
+        }
+    }
+
+    /// Sets the context's dash pattern, scaled to the line width.
+    func apply(to ctx: CGContext, width: CGFloat) {
+        switch self {
+        case .solid: break
+        case .dashed: ctx.setLineDash(phase: 0, lengths: [width * 3, width * 2])
+        case .dotted:
+            ctx.setLineCap(.round)
+            ctx.setLineDash(phase: 0, lengths: [0, width * 2])
+        }
+    }
+}
+
 /// Text looks, chosen from the editor's Style menu.
 enum TextStyle: Int, CaseIterable {
     case outline, plain, shadow, filledBox, lightBox, mono, serif
@@ -118,16 +165,39 @@ struct Annotation {
     var style = 0
     /// The image of a `.picture` annotation, drawn to fill `rect`.
     var picture: CGImage?
+    /// `LineDash` raw value.
+    var dash = 0
+    /// Arrow look (`ArrowType` raw value) and what's on each end (`ArrowHead` raw values).
+    var arrowType = 0
+    var startHead = 0
+    var endHead = 1
+    /// A curved arrow's bend point when the user has dragged it; nil = the default curve.
+    var control: CGPoint?
+
+    var lineDash: LineDash { LineDash(rawValue: dash) ?? .solid }
+    var arrowLook: ArrowType { ArrowType(rawValue: arrowType) ?? .tapered }
+    var startEnd: ArrowHead { ArrowHead(rawValue: startHead) ?? .none }
+    var endEnd: ArrowHead { ArrowHead(rawValue: endHead) ?? .arrow }
+
+    /// Default bend point for a curved arrow (a gentle arc to one side).
+    var defaultCurveControl: CGPoint {
+        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let dx = end.x - start.x, dy = end.y - start.y
+        return CGPoint(x: mid.x - dy * 0.3, y: mid.y + dx * 0.3)
+    }
+
+    /// Moves one end, keeping a custom curve's shape relative to the arrow.
+    mutating func setEnd(_ point: CGPoint, isStart: Bool) {
+        let offset = control.map { CGVector(dx: $0.x - defaultCurveControl.x, dy: $0.y - defaultCurveControl.y) }
+        if isStart { start = point } else { end = point }
+        if let offset { control = CGPoint(x: defaultCurveControl.x + offset.dx, y: defaultCurveControl.y + offset.dy) }
+    }
 
     var arrowStyle: ArrowStyle { ArrowStyle(rawValue: style) ?? .straight }
     var textStyle: TextStyle { TextStyle(rawValue: style) ?? .outline }
 
     /// The bend point of a curved arrow.
-    var curveControl: CGPoint {
-        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-        let dx = end.x - start.x, dy = end.y - start.y
-        return CGPoint(x: mid.x - dy * 0.3, y: mid.y + dx * 0.3)
-    }
+    var curveControl: CGPoint { control ?? defaultCurveControl }
 
     var rect: CGRect {
         CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
@@ -190,6 +260,7 @@ struct Annotation {
     mutating func move(by delta: CGVector) {
         start.x += delta.dx; start.y += delta.dy
         end.x += delta.dx; end.y += delta.dy
+        if let c = control { control = CGPoint(x: c.x + delta.dx, y: c.y + delta.dy) }
         points = points.map { CGPoint(x: $0.x + delta.dx, y: $0.y + delta.dy) }
     }
 }
@@ -258,6 +329,7 @@ enum AnnotationRenderer {
         case .rectangle:
             let r = a.rect
             let radius = min(a.lineWidth, r.width / 2, r.height / 2)
+            a.lineDash.apply(to: ctx, width: a.lineWidth)
             ctx.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil))
             ctx.strokePath()
 
@@ -268,20 +340,17 @@ enum AnnotationRenderer {
             ctx.fillPath()
 
         case .ellipse:
+            a.lineDash.apply(to: ctx, width: a.lineWidth)
             ctx.strokeEllipse(in: a.rect)
 
         case .line:
+            a.lineDash.apply(to: ctx, width: a.lineWidth)
             ctx.move(to: a.start)
             ctx.addLine(to: a.end)
             ctx.strokePath()
 
         case .arrow:
-            if a.arrowStyle == .curved {
-                drawCurvedArrow(a, ctx)
-            } else {
-                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
-                ctx.fillPath()
-            }
+            drawArrow(a, ctx)
 
         case .pencil, .highlighter:
             guard let first = a.points.first else { return }
@@ -344,6 +413,97 @@ enum AnnotationRenderer {
     }
 
     /// Bent arrow: a curved shaft ending in a solid head that follows the curve.
+    /// All arrow looks: tapered (filled shape), classic (line + chosen heads, may be dashed),
+    /// outlined (hollow tapered shape); each straight or curved.
+    private static func drawArrow(_ a: Annotation, _ ctx: CGContext) {
+        let curved = a.arrowStyle == .curved
+        switch a.arrowLook {
+        case .tapered:
+            if curved { drawCurvedArrow(a, ctx) } else {
+                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
+                ctx.fillPath()
+            }
+        case .outlined:
+            ctx.setLineWidth(max(1.5, a.lineWidth * 0.5))
+            ctx.setLineJoin(.round)
+            if curved {
+                let path = curvedArrowOutline(a)
+                ctx.addPath(path)
+            } else {
+                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
+            }
+            ctx.strokePath()
+        case .classic:
+            drawClassicArrow(a, ctx, curved: curved)
+        }
+    }
+
+    /// A line (straight or curved, solid/dashed/dotted) with an arrowhead, dot or nothing on each end.
+    private static func drawClassicArrow(_ a: Annotation, _ ctx: CGContext, curved: Bool) {
+        let w = a.lineWidth
+        let c = a.curveControl
+        // Directions pointing out of each end, along the line.
+        func unit(_ from: CGPoint, _ to: CGPoint) -> CGPoint {
+            let dx = to.x - from.x, dy = to.y - from.y, l = max(hypot(dx, dy), 0.001)
+            return CGPoint(x: dx / l, y: dy / l)
+        }
+        let outEnd = unit(curved ? c : a.start, a.end)
+        let outStart = unit(curved ? c : a.end, a.start)
+        let headLength = w * 3.2 + 6, headWidth = w * 2.8 + 6, dotRadius = w * 1.4 + 2
+        // Stop the line short of an arrowhead so its tip stays sharp.
+        func trimmed(_ p: CGPoint, _ out: CGPoint, _ head: ArrowHead) -> CGPoint {
+            head == .arrow ? CGPoint(x: p.x - out.x * headLength * 0.8, y: p.y - out.y * headLength * 0.8) : p
+        }
+        let s = trimmed(a.start, outStart, a.startEnd), e = trimmed(a.end, outEnd, a.endEnd)
+
+        ctx.saveGState()
+        ctx.setLineWidth(w)
+        a.lineDash.apply(to: ctx, width: w)
+        ctx.move(to: s)
+        if curved { ctx.addQuadCurve(to: e, control: c) } else { ctx.addLine(to: e) }
+        ctx.strokePath()
+        ctx.restoreGState()
+
+        func head(_ kind: ArrowHead, at tip: CGPoint, out: CGPoint) {
+            switch kind {
+            case .none: break
+            case .dot:
+                ctx.fillEllipse(in: CGRect(x: tip.x - dotRadius, y: tip.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
+            case .arrow:
+                let n = CGPoint(x: -out.y, y: out.x)
+                let base = CGPoint(x: tip.x - out.x * headLength, y: tip.y - out.y * headLength)
+                ctx.move(to: tip)
+                ctx.addLine(to: CGPoint(x: base.x + n.x * headWidth / 2, y: base.y + n.y * headWidth / 2))
+                ctx.addLine(to: CGPoint(x: base.x - n.x * headWidth / 2, y: base.y - n.y * headWidth / 2))
+                ctx.closePath()
+                ctx.fillPath()
+            }
+        }
+        head(a.startEnd, at: a.start, out: outStart)
+        head(a.endEnd, at: a.end, out: outEnd)
+    }
+
+    /// Hollow outline of a curved tapered arrow (shaft edges follow the curve).
+    private static func curvedArrowOutline(_ a: Annotation) -> CGPath {
+        let w = a.lineWidth, c = a.curveControl, end = a.end
+        let dx = end.x - c.x, dy = end.y - c.y, l = max(hypot(dx, dy), 0.001)
+        let u = CGPoint(x: dx / l, y: dy / l), n = CGPoint(x: -u.y, y: u.x)
+        let headLength = min(w * 4.5 + 6, hypot(end.x - a.start.x, end.y - a.start.y) * 0.5)
+        let headWidth = w * 3.6 + 6, shaft = w * 1.3
+        let base = CGPoint(x: end.x - u.x * headLength, y: end.y - u.y * headLength)
+        func off(_ p: CGPoint, _ d: CGFloat) -> CGPoint { CGPoint(x: p.x + n.x * d, y: p.y + n.y * d) }
+        let path = CGMutablePath()
+        path.move(to: a.start)
+        path.addQuadCurve(to: off(base, shaft / 2), control: off(c, shaft / 2))
+        path.addLine(to: off(base, headWidth / 2))
+        path.addLine(to: end)
+        path.addLine(to: off(base, -headWidth / 2))
+        path.addLine(to: off(base, -shaft / 2))
+        path.addQuadCurve(to: a.start, control: off(c, -shaft / 2))
+        path.closeSubpath()
+        return path
+    }
+
     private static func drawCurvedArrow(_ a: Annotation, _ ctx: CGContext) {
         let c = a.curveControl, end = a.end, w = a.lineWidth
         let dx = end.x - c.x, dy = end.y - c.y

@@ -12,6 +12,18 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     var lineWidth: CGFloat = 4
     var arrowStyle: ArrowStyle = .straight
     var textStyle: TextStyle = .outline
+    // Defaults for new shapes, set from the properties bar.
+    var lineDash: LineDash = .solid
+    var arrowType: ArrowType = .tapered
+    var startHead: ArrowHead = .none
+    var endHead: ArrowHead = .arrow
+    /// Told whenever the selected shape changes, so the properties bar can follow it.
+    var onSelectionChange: (() -> Void)?
+
+    /// The selected shape, if any.
+    var selectedAnnotation: Annotation? {
+        selectedIndex.flatMap { document.annotations.indices.contains($0) ? document.annotations[$0] : nil }
+    }
     /// Width ÷ height for the crop tool, or nil for free cropping.
     var cropAspect: CGFloat?
 
@@ -23,7 +35,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var draft: Annotation?
     private var cropStart: CGPoint?
     private var cropDraft: CGRect?
-    private var selectedIndex: Int?
+    private var selectedIndex: Int? { didSet { if oldValue != selectedIndex { onSelectionChange?() } } }
+    /// Dragging a curved arrow's bend handle.
+    private var draggingControl: Int?
     /// Dragging one end of a selected arrow or line (`isStart` picks which end).
     private var draggingEnd: (index: Int, isStart: Bool)?
 
@@ -31,6 +45,13 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var selectedLineIndex: Int? {
         guard let index = selectedIndex, document.annotations.indices.contains(index),
               [.arrow, .line].contains(document.annotations[index].tool) else { return nil }
+        return index
+    }
+
+    /// The selected arrow, if it's curved (it then shows a bend handle).
+    private var curveHandleIndex: Int? {
+        guard let index = selectedLineIndex, document.annotations[index].tool == .arrow,
+              document.annotations[index].arrowStyle == .curved else { return nil }
         return index
     }
 
@@ -180,6 +201,21 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if let index = selectedLineIndex {
             // Arrows and lines: a round handle on each end instead of a box.
             let a = document.annotations[index]
+            if curveHandleIndex == index {
+                // Curved arrow: dashed guides from each end to a diamond bend handle.
+                let c = toView(a.curveControl)
+                let guides = NSBezierPath()
+                guides.move(to: toView(a.start)); guides.line(to: c); guides.line(to: toView(a.end))
+                guides.lineWidth = 1
+                guides.setLineDash([4, 3], count: 2, phase: 0)
+                NSColor.controlAccentColor.withAlphaComponent(0.7).setStroke()
+                guides.stroke()
+                let diamond = NSBezierPath()
+                diamond.move(to: CGPoint(x: c.x, y: c.y - 7)); diamond.line(to: CGPoint(x: c.x + 7, y: c.y))
+                diamond.line(to: CGPoint(x: c.x, y: c.y + 7)); diamond.line(to: CGPoint(x: c.x - 7, y: c.y)); diamond.close()
+                NSColor.white.setFill(); diamond.fill()
+                NSColor.controlAccentColor.setStroke(); diamond.lineWidth = 2; diamond.stroke()
+            }
             for point in [a.start, a.end] {
                 let c = toView(point)
                 let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12))
@@ -241,9 +277,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         let p = toImage(viewPoint)
         movedSinceMouseDown = false
 
-        // Grab an end of the selected arrow or line, whichever tool is active.
+        // Grab an end (or a curved arrow's bend handle) of the selected arrow or line, whichever tool is active.
         if let handle = endHandle(at: viewPoint) {
             draggingEnd = handle
+            return
+        }
+        if let index = curveHandleIndex, hypot(toView(document.annotations[index].curveControl).x - viewPoint.x,
+                                               toView(document.annotations[index].curveControl).y - viewPoint.y) <= 11 {
+            draggingControl = index
             return
         }
 
@@ -273,7 +314,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             changed()
         default:
             draft = Annotation(tool: tool, start: p, end: p, points: [p], color: color, lineWidth: lineWidth,
-                               style: tool == .arrow ? arrowStyle.rawValue : 0)
+                               style: tool == .arrow ? arrowStyle.rawValue : 0,
+                               dash: lineDash.rawValue, arrowType: arrowType.rawValue,
+                               startHead: startHead.rawValue, endHead: endHead.rawValue)
         }
         needsDisplay = true
     }
@@ -287,8 +330,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             var a = document.annotations[handle.index]
             let anchor = handle.isStart ? a.end : a.start
             if shift { p = constrained(p, from: anchor, tool: a.tool) }
-            if handle.isStart { a.start = p } else { a.end = p }
+            a.setEnd(p, isStart: handle.isStart)
             document.annotations[handle.index] = a
+            needsDisplay = true
+            return
+        }
+        if let index = draggingControl, document.annotations.indices.contains(index) {
+            if !movedSinceMouseDown { document.checkpoint(); movedSinceMouseDown = true }
+            document.annotations[index].control = p
             needsDisplay = true
             return
         }
@@ -340,8 +389,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if draggingEnd != nil {
+        if draggingEnd != nil || draggingControl != nil {
             draggingEnd = nil
+            draggingControl = nil
             if movedSinceMouseDown { changed() }
             needsDisplay = true
             return
@@ -406,7 +456,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         document.annotations[index].color = color
         document.annotations[index].lineWidth = lineWidth
         switch document.annotations[index].tool {
-        case .arrow: document.annotations[index].style = arrowStyle.rawValue
+        case .arrow:
+            if document.annotations[index].style != arrowStyle.rawValue { document.annotations[index].control = nil }
+            document.annotations[index].style = arrowStyle.rawValue
+            document.annotations[index].arrowType = arrowType.rawValue
+            document.annotations[index].startHead = startHead.rawValue
+            document.annotations[index].endHead = endHead.rawValue
+            document.annotations[index].dash = lineDash.rawValue
+        case .rectangle, .ellipse, .line:
+            document.annotations[index].dash = lineDash.rawValue
         case .text: document.annotations[index].style = textStyle.rawValue
         default: break
         }
