@@ -354,7 +354,7 @@ final class BackgroundViewController: NSViewController {
     private func savePreset() {
         let alert = NSAlert()
         alert.messageText = "Save background preset"
-        alert.informativeText = "Name this style so you can reuse it, or apply it to every screenshot in Settings → Screenshots."
+        alert.informativeText = "Name this style so you can reuse it, or apply it to every screenshot in Preferences → Screenshots."
         let field = NSTextField(frame: CGRect(x: 0, y: 0, width: 240, height: 24))
         field.placeholderString = "e.g. Blog post"
         alert.accessoryView = field

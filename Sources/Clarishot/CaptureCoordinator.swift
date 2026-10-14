@@ -253,7 +253,7 @@ final class CaptureCoordinator {
 
     // MARK: After capture
 
-    /// Runs the after-capture actions from Settings → Screenshots for a finished screenshot.
+    /// Runs the after-capture actions from Preferences → Screenshots for a finished screenshot.
     func deliver(_ original: Capture) {
         let settings = Settings.shared
         var capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original

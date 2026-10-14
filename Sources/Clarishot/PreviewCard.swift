@@ -1,7 +1,7 @@
 import AppKit
 import CoreImage
 
-/// Stacks the floating preview cards in a corner of the screen (see Settings → Quick Access).
+/// Stacks the floating preview cards in a corner of the screen (see Preferences → Quick Access).
 @MainActor
 final class PreviewManager {
     static let shared = PreviewManager()

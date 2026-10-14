@@ -219,12 +219,13 @@ final class RecordingControlBar: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         appearance = NSAppearance(named: .darkAqua)
 
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 12
-        background.layer?.masksToBounds = true
+        let fallback = NSVisualEffectView()
+        fallback.material = .hudWindow
+        fallback.state = .active
+        fallback.wantsLayer = true
+        fallback.layer?.cornerRadius = 12
+        fallback.layer?.masksToBounds = true
+        let (outer, background) = AppAppearance.surface(cornerRadius: 12, fallback: fallback)
 
         let stop = PanelIconButton(symbol: "stop.fill", tip: "Stop recording")
         stop.contentTintColor = .systemRed
@@ -248,7 +249,7 @@ final class RecordingControlBar: NSPanel {
             stack.topAnchor.constraint(equalTo: background.topAnchor),
             stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)
         ])
-        contentView = background
+        contentView = outer
     }
 
     func update(elapsed: TimeInterval, paused: Bool) {

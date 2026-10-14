@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 // `clarishot`: command-line control of the running Clarishot app, plus `clarishot mcp`, an MCP server
 // (stdio, JSON-RPC 2.0) so AI tools such as Claude Code, Claude Desktop and Cursor can use it.
-// Talks to the app over its local socket; turn on Settings → Advanced → "Allow AI tools & command line".
+// Talks to the app over its local socket; turn on Preferences → Advanced → "Allow AI tools & command line".
 
 // MARK: - Talking to the app
 
@@ -33,7 +33,7 @@ func call(_ method: String, _ params: [String: Any] = [:]) throws -> Any {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
     }
     guard connected == 0 else {
-        throw CLIError(message: "Clarishot isn't reachable. Open Clarishot and turn on Settings → Advanced → “Allow AI tools & command line”.")
+        throw CLIError(message: "Clarishot isn't reachable. Open Clarishot and turn on Preferences → Advanced → “Allow AI tools & command line”.")
     }
     var request = try JSONSerialization.data(withJSONObject: ["method": method, "params": params])
     request.append(UInt8(ascii: "\n"))
@@ -94,7 +94,7 @@ clarishot: control Clarishot from the terminal or an AI tool.
   clarishot record start | stop          Start the recording flow / stop and print the file
   clarishot mcp                          Run as an MCP server over stdio (for AI tools)
 
-Add --json to print raw JSON. Needs Settings → Advanced → “Allow AI tools & command line”.
+Add --json to print raw JSON. Needs Preferences → Advanced → “Allow AI tools & command line”.
 """
 
 func value(after flag: String, in args: [String]) -> String? {

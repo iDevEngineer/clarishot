@@ -283,24 +283,25 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         blur.layer?.shadowRadius = 10
         blur.layer?.shadowOffset = CGSize(width: 0, height: -3)
 
+        let (outer, inner) = AppAppearance.surface(cornerRadius: 18, fallback: blur)
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = spacing
         stack.edgeInsets = NSEdgeInsets(top: padding + 2, left: padding + 2, bottom: padding + 2, right: padding + 2)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        blur.addSubview(stack)
+        inner.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: blur.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: blur.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: inner.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: inner.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: inner.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: inner.bottomAnchor)
         ])
         for v in views {
             v.translatesAutoresizingMaskIntoConstraints = false
             v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * (padding + 2)).isActive = true
         }
-        return blur
+        return outer
     }
 
     private func horizontalDivider() -> NSView {

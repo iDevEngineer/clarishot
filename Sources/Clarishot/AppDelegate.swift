@@ -10,10 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// clarishot://<action>, e.g. clarishot://capture-area. Only when allowed in Settings → Advanced.
+    /// clarishot://<action>, e.g. clarishot://capture-area. Only when allowed in Preferences → Advanced.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard Settings.shared.allowURLScheme else {
-            Toast.show("Turn on “Allow URL scheme API” in Settings → Advanced")
+            Toast.show("Turn on “Allow URL scheme API” in Preferences → Advanced")
             return
         }
         for url in urls where url.scheme == "clarishot" {
@@ -29,10 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Shortcuts.registerAll()
         Wallpaper.startWatching()
         AgentServer.shared.sync()
+        AppAppearance.apply()
         // Re-register hotkeys whenever shortcuts change in Settings.
         NotificationCenter.default.addObserver(forName: Settings.didChange, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 AgentServer.shared.sync()
+                AppAppearance.apply()
                 guard !HotkeyCenter.shared.isSuspended else { return }
                 Shortcuts.registerAll()
             }

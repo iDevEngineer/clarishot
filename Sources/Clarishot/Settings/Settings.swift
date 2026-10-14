@@ -250,6 +250,28 @@ final class Settings {
 
     // MARK: Added to match the full Settings window
 
+    var theme: AppAppearance.Theme {
+        get { AppAppearance.Theme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system }
+        set { set(newValue.rawValue, "theme") }
+    }
+
+    /// Liquid Glass for floating bars and panels (macOS 26+).
+    var liquidGlass: Bool {
+        get { bool("liquidGlass", default: false) }
+        set { set(newValue, "liquidGlass") }
+    }
+
+    /// "" = follow the system; otherwise a language code. Takes effect after relaunch.
+    var appLanguage: String {
+        get { defaults.string(forKey: "appLanguage") ?? "" }
+        set {
+            defaults.set(newValue, forKey: "appLanguage")
+            // AppleLanguages is what macOS reads at launch to pick the app's language.
+            if newValue.isEmpty { defaults.removeObject(forKey: "AppleLanguages") } else { defaults.set([newValue], forKey: "AppleLanguages") }
+            notify()
+        }
+    }
+
     var showMenuBarIcon: Bool {
         get { bool("showMenuBarIcon", default: true) }
         set { set(newValue, "showMenuBarIcon") }
@@ -454,7 +476,7 @@ final class Settings {
     // MARK: Reset
 
     func resetAll() {
-        for key in ["allowAgentAccess", "autoExpandCanvas", "inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
+        for key in ["theme", "liquidGlass", "allowAgentAccess", "autoExpandCanvas", "inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
                     "afterRecCopy", "afterRecSave", "previewScale", "autoCloseSaves", "saveButtonAsks",
                     "wallpaperFollowsSpaces", "convertToSRGB", "addBorder", "windowPadding", "annotateOnTop",
                     "annotateDockIcon", "annotateRememberBackground", "annotateShadows", "askForName", "retinaSuffix",

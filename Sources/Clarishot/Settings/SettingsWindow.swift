@@ -20,7 +20,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.title = "Settings"
+        window.title = "Preferences"
         // Tall, but never taller than the screen allows.
         let available = (NSScreen.main?.visibleFrame.height ?? 900) - 40
         window.setContentSize(CGSize(width: 810, height: min(860, available)))
@@ -379,6 +379,34 @@ class SettingsPane: NSViewController {
         return stack
     }
 
+    /// A row with an icon on the left, like the Appearance rows.
+    func iconRow(_ symbol: String, _ title: String, note: String?, _ control: NSView) -> NSView {
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: 16, weight: .regular)
+        icon.contentTintColor = .secondaryLabelColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        var texts: [NSView] = [label]
+        if let note {
+            let text = NSTextField(wrappingLabelWithString: note)
+            text.font = .systemFont(ofSize: 11)
+            text.textColor = .secondaryLabelColor
+            text.preferredMaxLayoutWidth = 260
+            texts.append(text)
+        }
+        let column = NSStackView(views: texts)
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 2
+        let line = NSStackView(views: [icon, column, NSView(), control])
+        line.spacing = 12
+        line.alignment = .centerY
+        line.edgeInsets = NSEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
+        return line
+    }
+
     func toggle(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSSwitch {
         let control = NSSwitch()
         control.controlSize = .mini
@@ -470,10 +498,33 @@ final class GeneralPane: SettingsPane {
 
     override func build() {
         let s = Settings.shared
+        let languages: [(String, String)] = [("System Default", ""), ("English", "en")]
+        let codes = languages.map(\.1)
+        let themes = NSStackView(views: AppAppearance.Theme.allCases.map { theme -> NSView in
+            ThemeTile(theme: theme, selected: s.theme == theme) { [weak self] in
+                s.theme = theme
+                self?.rebuild()
+            }
+        })
+        themes.spacing = 12
+        var appearance = [
+            iconRow("globe", "App Language", note: "Choose the language used across Clarishot",
+                    popup(languages.map(\.0), selected: codes.firstIndex(of: s.appLanguage) ?? 0) { index in
+                        s.appLanguage = codes[index]
+                        Toast.show("Restart Clarishot to change its language")
+                    }),
+            iconRow("circle.lefthalf.filled", "Theme", note: "Choose your preferred appearance", themes)
+        ]
+        if #available(macOS 26.0, *) {
+            appearance.append(iconRow("sparkles", "Liquid Glass Effect",
+                                      note: "Use translucent Liquid Glass for floating bars and panels. Turn off to use solid controls.",
+                                      toggle({ s.liquidGlass }, { s.liquidGlass = $0 })))
+        }
+        section("Appearance", appearance)
         section("App", [
             row("Launch at login", toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 })),
             row("Show menu bar icon", toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }),
-                note: "When hidden, open Clarishot again from Finder to get back to Settings.")
+                note: "When hidden, open Clarishot again from Finder to get back to Preferences.")
         ])
         section("Capture", [
             row("Hide desktop icons while capturing",
@@ -931,7 +982,7 @@ final class AdvancedPane: SettingsPane {
                 note: "Lets other apps and scripts run captures with links like clarishot://capture-area or clarishot://record-screen.")
         ])
         section("Other", [
-            row("", button("Reset All Settings…") { [weak self] in self?.confirmReset() })
+            row("", button("Reset All Preferences…") { [weak self] in self?.confirmReset() })
         ])
     }
 
@@ -1013,4 +1064,67 @@ enum AgentSetup {
             NSAlert(error: error).runModal()
         }
     }
+}
+
+/// A small picture of a window in the System, Light or Dark style, with a caption.
+final class ThemeTile: NSView {
+    private let onClick: () -> Void
+
+    init(theme: AppAppearance.Theme, selected: Bool, onClick: @escaping () -> Void) {
+        self.onClick = onClick
+        super.init(frame: .zero)
+        let picture = NSView()
+        picture.wantsLayer = true
+        picture.layer?.cornerRadius = 8
+        picture.layer?.cornerCurve = .continuous
+        picture.layer?.masksToBounds = true
+        picture.layer?.borderWidth = selected ? 2.5 : 0.5
+        picture.layer?.borderColor = (selected ? NSColor.controlAccentColor : NSColor.separatorColor).cgColor
+        let size = CGSize(width: 76, height: 50)
+        func half(_ dark: Bool, _ frame: CGRect) {
+            let pane = CALayer()
+            pane.frame = frame
+            pane.backgroundColor = (dark ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 0.96, alpha: 1)).cgColor
+            picture.layer?.addSublayer(pane)
+            for (i, color) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
+                let dot = CALayer()
+                dot.frame = CGRect(x: frame.minX + 6 + CGFloat(i) * 7, y: frame.maxY - 9, width: 4.5, height: 4.5)
+                dot.cornerRadius = 2.25
+                dot.backgroundColor = color.cgColor
+                picture.layer?.addSublayer(dot)
+            }
+            let bar = CALayer()
+            bar.frame = CGRect(x: frame.minX + 6, y: frame.minY + 8, width: frame.width - 12, height: 4)
+            bar.cornerRadius = 2
+            bar.backgroundColor = (dark ? NSColor(white: 0.35, alpha: 1) : NSColor(white: 0.82, alpha: 1)).cgColor
+            picture.layer?.addSublayer(bar)
+        }
+        switch theme {
+        case .system:
+            half(false, CGRect(x: 0, y: 0, width: size.width / 2, height: size.height))
+            half(true, CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height))
+        case .light: half(false, CGRect(origin: .zero, size: size))
+        case .dark: half(true, CGRect(origin: .zero, size: size))
+        }
+        picture.translatesAutoresizingMaskIntoConstraints = false
+        picture.widthAnchor.constraint(equalToConstant: size.width).isActive = true
+        picture.heightAnchor.constraint(equalToConstant: size.height).isActive = true
+
+        let caption = NSTextField(labelWithString: theme.title)
+        caption.font = .systemFont(ofSize: 11, weight: selected ? .semibold : .regular)
+        caption.textColor = selected ? .controlAccentColor : .secondaryLabelColor
+        let column = NSStackView(views: [picture, caption])
+        column.orientation = .vertical
+        column.spacing = 5
+        column.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(column)
+        NSLayoutConstraint.activate([
+            column.leadingAnchor.constraint(equalTo: leadingAnchor), column.trailingAnchor.constraint(equalTo: trailingAnchor),
+            column.topAnchor.constraint(equalTo: topAnchor), column.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func mouseDown(with event: NSEvent) { onClick() }
 }

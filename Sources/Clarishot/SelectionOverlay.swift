@@ -844,19 +844,20 @@ final class AllInOneBar: NSView, NSTextFieldDelegate {
         background.layer?.masksToBounds = true
         background.layer?.borderWidth = 1
         background.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        let (outer, inner) = AppAppearance.surface(cornerRadius: 16, fallback: background)
         let stack = NSStackView(views: views)
         stack.spacing = 4
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(stack)
+        inner.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: background.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: inner.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: inner.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: inner.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: inner.bottomAnchor)
         ])
-        return background
+        return outer
     }
 
     private static func divider() -> NSView {

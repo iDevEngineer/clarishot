@@ -98,14 +98,15 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
     // MARK: Layout
 
     private func build() {
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.blendingMode = .behindWindow
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 16
-        background.layer?.masksToBounds = true
-        panel.contentView = background
+        let fallback = NSVisualEffectView()
+        fallback.material = .hudWindow
+        fallback.state = .active
+        fallback.blendingMode = .behindWindow
+        fallback.wantsLayer = true
+        fallback.layer?.cornerRadius = 16
+        fallback.layer?.masksToBounds = true
+        let (outer, background) = AppAppearance.surface(cornerRadius: 16, fallback: fallback)
+        panel.contentView = outer
 
         let kinds: [(String, HistoryStore.Kind?)] = [("All", nil), ("Screenshots", .screenshot),
                                                      ("Recordings", .recording), ("GIFs", .gif)]
@@ -173,7 +174,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
         shown = HistoryStore.shared.items.filter { filter == nil || $0.kind == filter }
         collection.reloadData()
         if Settings.shared.historyDays == 0 {
-            emptyLabel.stringValue = "Capture history is off. Turn it on in Settings → General."
+            emptyLabel.stringValue = "Capture history is off. Turn it on in Preferences → General."
         } else {
             emptyLabel.stringValue = shown.isEmpty ? "No captures yet." : ""
         }

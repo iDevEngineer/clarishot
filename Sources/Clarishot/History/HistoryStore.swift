@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 
-/// Keeps a copy of every capture for Settings → General → "Keep capture history"
+/// Keeps a copy of every capture for Preferences → General → "Keep capture history"
 /// (off, 1 day, 1 week or 1 month). Files live in Application Support/Clarishot/History.
 @MainActor
 final class HistoryStore {

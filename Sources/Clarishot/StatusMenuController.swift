@@ -65,7 +65,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add(menu, "About Clarishot", symbol: nil, action: #selector(about))
         menu.addItem(.separator())
-        let settings = add(menu, "Settings...", symbol: nil, action: #selector(openSettings))
+        let settings = add(menu, "Preferences...", symbol: nil, action: #selector(openSettings))
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = .command
         menu.addItem(.separator())
