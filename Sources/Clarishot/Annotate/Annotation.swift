@@ -486,14 +486,15 @@ final class AnnotateDocument {
         return true
     }
 
-    /// Covers text that looks private (emails, keys, card numbers…) with pixelate boxes (undoable).
+    /// Covers text that looks private (emails, keys, card numbers…) with solid boxes (undoable).
+    /// Solid, not pixelate: pixelated text can sometimes be reconstructed.
     /// Returns how many were hidden.
     func hideSensitiveInfo() async -> Int {
         let matches = await SensitiveDataFinder.findAsync(in: baseImage, pointSize: imageSize)
         guard !matches.isEmpty else { return 0 }
         checkpoint()
         for match in matches {
-            annotations.append(Annotation(tool: .pixelate, start: CGPoint(x: match.rect.minX, y: match.rect.minY),
+            annotations.append(Annotation(tool: .filledRectangle, start: CGPoint(x: match.rect.minX, y: match.rect.minY),
                                           end: CGPoint(x: match.rect.maxX, y: match.rect.maxY),
                                           color: .black, lineWidth: 4))
         }
