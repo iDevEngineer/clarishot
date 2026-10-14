@@ -65,7 +65,13 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         document.background.enabled ? document.background.insets(for: document.crop.size) : .zero
     }
 
-    private var viewScale: CGFloat {
+    /// nil = fit the window; otherwise a fixed zoom (1 = 100%).
+    var zoom: CGFloat? { didSet { pan = .zero; needsDisplay = true; window?.invalidateCursorRects(for: self); onZoomChange?() } }
+    var onZoomChange: (() -> Void)?
+    /// Scroll offset when zoomed in past the window.
+    private var pan: CGPoint = .zero
+
+    private var fitScale: CGFloat {
         let crop = document.crop
         let available = bounds.insetBy(dx: margin, dy: margin)
         let inset = backgroundInset
@@ -73,12 +79,30 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         return min(1, available.width / max(total.width, 1), available.height / max(total.height, 1))
     }
 
+    /// The zoom actually shown (for the zoom menu's label).
+    var currentScale: CGFloat { viewScale }
+
+    private var viewScale: CGFloat { zoom ?? fitScale }
+
+    /// Two-finger scroll moves around a zoomed-in picture.
+    override func scrollWheel(with event: NSEvent) {
+        guard zoom != nil else { return super.scrollWheel(with: event) }
+        let size = frameRectInView.size
+        let limitX = max(0, (size.width - bounds.width) / 2 + margin)
+        let limitY = max(0, (size.height - bounds.height) / 2 + margin)
+        pan.x = min(max(pan.x + event.scrollingDeltaX, -limitX), limitX)
+        pan.y = min(max(pan.y + event.scrollingDeltaY, -limitY), limitY)
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+    }
+
     /// Screenshot plus background, in view points.
     private var frameRectInView: CGRect {
         let s = viewScale
         let inset = backgroundInset
         let size = CGSize(width: (document.crop.width + 2 * inset.width) * s, height: (document.crop.height + 2 * inset.height) * s)
-        return CGRect(x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded(),
+        return CGRect(x: ((bounds.width - size.width) / 2 + pan.x).rounded(),
+                      y: ((bounds.height - size.height) / 2 + pan.y).rounded(),
                       width: size.width, height: size.height)
     }
 

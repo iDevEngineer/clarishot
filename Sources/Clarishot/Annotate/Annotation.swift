@@ -4,6 +4,8 @@ import CoreImage
 /// Editor tools, in toolbar order. `key` is the single-letter shortcut.
 enum Tool: CaseIterable {
     case select, crop, rectangle, filledRectangle, ellipse, line, arrow, text, highlighter, pixelate, blur, spotlight, counter, pencil
+    /// A placed picture (Add screenshot). Not a toolbar tool.
+    case picture
 
     var symbol: String {
         switch self {
@@ -21,6 +23,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "flashlight.on.fill"
         case .counter: return "1.circle"
         case .pencil: return "scribble"
+        case .picture: return "photo"
         }
     }
 
@@ -40,6 +43,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "Spotlight"
         case .counter: return "Counter"
         case .pencil: return "Pencil"
+        case .picture: return "Picture"
         }
     }
 
@@ -59,6 +63,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "s"
         case .counter: return "n"
         case .pencil: return "p"
+        case .picture: return ""
         }
     }
 
@@ -111,6 +116,8 @@ struct Annotation {
     var number = 0
     /// Arrow: `ArrowStyle` raw value. Text: `TextStyle` raw value.
     var style = 0
+    /// The image of a `.picture` annotation, drawn to fill `rect`.
+    var picture: CGImage?
 
     var arrowStyle: ArrowStyle { ArrowStyle(rawValue: style) ?? .straight }
     var textStyle: TextStyle { TextStyle(rawValue: style) ?? .outline }
@@ -239,12 +246,15 @@ enum AnnotationRenderer {
         ctx.setLineWidth(a.lineWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        let shadowed: Set<Tool> = [.arrow, .line, .rectangle, .ellipse, .pencil, .text, .filledRectangle]
+        let shadowed: Set<Tool> = [.arrow, .line, .rectangle, .ellipse, .pencil, .text, .filledRectangle, .picture]
         if shadowed.contains(a.tool), UserDefaults.standard.object(forKey: "annotateShadows") as? Bool ?? true {
             ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: NSColor.black.withAlphaComponent(0.35).cgColor)
         }
 
         switch a.tool {
+        case .picture:
+            if let picture = a.picture { drawImage(picture, in: a.rect, ctx: ctx) }
+
         case .rectangle:
             let r = a.rect
             let radius = min(a.lineWidth, r.width / 2, r.height / 2)
@@ -515,11 +525,30 @@ final class AnnotateDocument {
         crop = s.crop
     }
 
+    /// Locked: the canvas stays the picture's size. Unlocked: it grows to fit drawings.
+    /// Starts from Preferences → Annotate → Automatically expand canvas; the lock button toggles it.
+    var canvasLocked = !Settings.shared.annotateAutoExpand
+
+    /// Add screenshot: places a picture to the right of the canvas and grows the canvas for it (undoable).
+    func addPicture(_ image: CGImage, pointSize: CGSize) {
+        checkpoint()
+        // Keep it a sensible size next to the current picture.
+        let maxHeight = max(crop.height, 200)
+        let k = min(1, maxHeight / max(pointSize.height, 1))
+        let size = CGSize(width: pointSize.width * k, height: pointSize.height * k)
+        let origin = CGPoint(x: crop.maxX + 24, y: crop.minY)
+        var shape = Annotation(tool: .picture, start: origin, end: CGPoint(x: origin.x + size.width, y: origin.y + size.height),
+                               color: .clear, lineWidth: 0)
+        shape.picture = image
+        annotations.append(shape)
+        crop = crop.union(shape.rect.insetBy(dx: -8, dy: -8)).integral
+    }
+
     /// "Automatically expand canvas": grows the canvas (never shrinks it) to take in every
     /// annotation plus a small margin. Space outside the picture stays transparent.
     /// Runs as part of the change that caused it, so one Undo reverts both.
     func expandToFitAnnotations() {
-        guard Settings.shared.annotateAutoExpand else { return }
+        guard !canvasLocked else { return }
         var area = crop
         for a in annotations where !a.isEmpty { area = area.union(a.bounds.insetBy(dx: -8, dy: -8)) }
         if area != crop { crop = area.integral }

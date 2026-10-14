@@ -10,7 +10,6 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     static func open(_ capture: Capture, onDone: ((Capture) -> Void)? = nil) {
         let controller = AnnotateWindowController(capture: capture)
         controller.onDone = onDone
-        if onDone != nil { controller.addDoneButton() }
         openControllers.append(controller)
         let settings = Settings.shared
         if settings.annotateShowDockIcon { NSApp.setActivationPolicy(.regular) }
@@ -44,21 +43,15 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private var onDone: ((Capture) -> Void)?
     private var actionsStack: NSStackView?
 
-    private func addDoneButton() {
-        let done = NSButton(title: "Done", target: self, action: #selector(doneEditing))
-        done.bezelStyle = .rounded
-        done.bezelColor = .controlAccentColor
-        done.keyEquivalent = "\r"
-        actionsStack?.addArrangedSubview(done)
-    }
-
     @objc private func doneEditing() {
         canvas.commitText()
         guard let result = document.rendered() else { return }
         let callback = onDone
         onDone = nil
         window.close()
-        callback?(result.from(document.capture.sourceBundleID))
+        let edited = result.from(document.capture.sourceBundleID)
+        // Opened from Capture & Annotate: hand back. Otherwise run the usual after-capture actions.
+        if let callback { callback(edited) } else { CaptureCoordinator.shared.deliver(edited) }
     }
 
     private init(capture: Capture) {
@@ -72,7 +65,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Annotate"
-        window.minSize = CGSize(width: 1000, height: 420)
+        window.minSize = CGSize(width: 1080, height: 460)
         window.delegate = self
         window.commands = self
         buildContent()
@@ -84,54 +77,106 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
     private static func initialFrame(for imageSize: CGSize) -> CGRect {
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let width = min(max(imageSize.width + 120, 960), visible.width * 0.9)
-        let height = min(max(imageSize.height + toolbarHeight + 120, 460), visible.height * 0.85)
+        let width = min(max(imageSize.width + 120, 1080), visible.width * 0.9)
+        let height = min(max(imageSize.height + toolbarHeight + bottomBarHeight + 120, 500), visible.height * 0.85)
         return CGRect(x: visible.midX - width / 2, y: visible.midY - height / 2, width: width, height: height)
     }
 
     // MARK: Layout
+
+    private static let bottomBarHeight: CGFloat = 46
+    private let lockButton = ToolButton(symbol: "lock.fill", tip: "Unlock canvas")
+    private let zoomButton = NSPopUpButton(frame: .zero, pullsDown: true)
 
     private func buildContent() {
         let content = NSView()
         window.contentView = content
 
         let toolbar = ToolbarView()
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        canvas.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(canvas)
-        content.addSubview(toolbar)
+        let bottomBar = ToolbarView(edge: .top)
+        for view in [toolbar, bottomBar, canvas] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+        }
 
-        let tools = NSStackView(views: Tool.allCases.map { tool in
+        // Left: crop, add screenshot, background — each in its own rounded button.
+        let crop = ToolButton(symbol: Tool.crop.symbol, tip: "Crop (C)")
+        crop.onClick = { [weak self] in self?.selectTool(.crop) }
+        toolButtons[.crop] = crop
+        let addShot = ToolButton(symbol: "photo.badge.plus", tip: "Add screenshot")
+        addShot.onClick = { [weak self] in self?.addScreenshot() }
+        backgroundButton.toolTip = "Add background (B)"
+        backgroundButton.onClick = { [weak self] in self?.showBackground() }
+        let leftGroup = NSStackView(views: [crop, addShot, backgroundButton].map { Self.capsule([$0]) })
+        leftGroup.spacing = 6
+
+        // Middle: every drawing tool in one rounded strip.
+        let drawing: [Tool] = [.select, .rectangle, .filledRectangle, .ellipse, .line, .arrow, .text,
+                               .pixelate, .blur, .spotlight, .counter, .pencil, .highlighter]
+        let toolsCapsule = Self.capsule(drawing.map { tool in
             let button = ToolButton(symbol: tool.symbol, tip: "\(tool.title) (\(tool.key.uppercased()))")
             button.onClick = { [weak self] in self?.selectTool(tool) }
             toolButtons[tool] = button
             return button
         })
-        tools.spacing = 2
 
+        // Style: colour ▾, line width and styles ▾, canvas lock, image menu.
         colorButton.toolTip = "Colour"
         colorButton.onClick = { [weak self] in self?.showColors() }
-        widthButton.onClick = { [weak self] in self?.cycleWidth() }
-        undoButton.onClick = { [weak self] in self?.undo() }
-        redoButton.onClick = { [weak self] in self?.redo() }
-        backgroundButton.onClick = { [weak self] in self?.showBackground() }
-
-        let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage))
-        let save = NSButton(title: "Save", target: self, action: #selector(saveImage))
-        save.bezelColor = .controlAccentColor
-        for b in [copy, save] { b.bezelStyle = .rounded; b.controlSize = .regular }
-
-        styleButton.onClick = { [weak self] in self?.showStyleMenu() }
+        widthButton.onClick = { [weak self] in self?.showStrokeMenu() }
+        lockButton.onClick = { [weak self] in self?.toggleCanvasLock() }
         imageButton.onClick = { [weak self] in self?.showImageMenu() }
-        let actions = NSStackView(views: [backgroundButton, imageButton, separator(), styleButton, colorButton, widthButton,
-                                          separator(), undoButton, redoButton, separator(), copy, save])
-        actions.spacing = 4
-        actionsStack = actions
+        let styleGroup = NSStackView(views: [Self.capsule([colorButton, Self.chevron()]),
+                                             Self.capsule([widthButton, Self.chevron()]),
+                                             Self.capsule([lockButton]),
+                                             Self.capsule([imageButton])])
+        styleGroup.spacing = 6
+        updateLockIcon()
 
-        tools.translatesAutoresizingMaskIntoConstraints = false
-        actions.translatesAutoresizingMaskIntoConstraints = false
-        toolbar.addSubview(tools)
-        toolbar.addSubview(actions)
+        // Right: Save as… and Done.
+        let saveAs = NSButton(title: "Save as…", target: self, action: #selector(saveImageAs))
+        saveAs.bezelStyle = .rounded
+        let done = NSButton(title: "Done", target: self, action: #selector(doneEditing))
+        done.bezelStyle = .rounded
+        done.bezelColor = .controlAccentColor
+        done.keyEquivalent = "\r"
+        let finish = NSStackView(views: [saveAs, done])
+        finish.spacing = 8
+
+        for view in [leftGroup, toolsCapsule, styleGroup, finish] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            toolbar.addSubview(view)
+        }
+
+        // Bottom bar: zoom ▾, Drag Me, share / pin / copy.
+        zoomButton.isBordered = false
+        zoomButton.addItem(withTitle: "100%")
+        for (title, value) in [("Fit to Window", nil), ("50%", 0.5), ("100%", 1.0), ("200%", 2.0)] as [(String, CGFloat?)] {
+            zoomButton.menu?.addItem(ClosureMenuItem(title: title) { [weak self] in self?.canvas.zoom = value })
+        }
+        let zoomCapsule = Self.capsule([zoomButton])
+        canvas.onZoomChange = { [weak self] in self?.updateZoomLabel() }
+
+        let dragHandle = DragOutHandle { [weak self] in self?.renderedFile() }
+        let share = ToolButton(symbol: "square.and.arrow.up", tip: "Share")
+        share.onClick = { [weak self, weak share] in
+            guard let self, let share, let file = self.renderedFile() else { return }
+            NSSharingServicePicker(items: [file]).show(relativeTo: share.bounds, of: share, preferredEdge: .maxY)
+        }
+        let pin = ToolButton(symbol: "pin.fill", tip: "Pin to the screen")
+        pin.onClick = { [weak self] in
+            guard let self, let result = self.document.rendered() else { return }
+            self.canvas.commitText()
+            PinWindow.pin(result)
+        }
+        let copy = ToolButton(symbol: "doc.on.doc.fill", tip: "Copy (⌘C)")
+        copy.onClick = { [weak self] in self?.copyImage() }
+        let outputs = NSStackView(views: [share, pin, copy].map { Self.capsule([$0]) })
+        outputs.spacing = 6
+        for view in [zoomCapsule, dragHandle, outputs] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            bottomBar.addSubview(view)
+        }
 
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: content.topAnchor),
@@ -139,20 +184,139 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             toolbar.heightAnchor.constraint(equalToConstant: Self.toolbarHeight),
 
+            bottomBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            bottomBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            bottomBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            bottomBar.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+
             canvas.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            canvas.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
             canvas.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             canvas.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            canvas.bottomAnchor.constraint(equalTo: content.bottomAnchor),
 
-            tools.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-            tools.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 84), // room for traffic lights
-            actions.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-            actions.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
-            actions.leadingAnchor.constraint(greaterThanOrEqualTo: tools.trailingAnchor, constant: 12)
+            leftGroup.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            leftGroup.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 92), // room for traffic lights
+            toolsCapsule.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            toolsCapsule.leadingAnchor.constraint(equalTo: leftGroup.trailingAnchor, constant: 12),
+            styleGroup.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            styleGroup.leadingAnchor.constraint(equalTo: toolsCapsule.trailingAnchor, constant: 12),
+            finish.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            finish.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
+            finish.leadingAnchor.constraint(greaterThanOrEqualTo: styleGroup.trailingAnchor, constant: 12),
+
+            zoomCapsule.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            zoomCapsule.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 12),
+            dragHandle.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            dragHandle.centerXAnchor.constraint(equalTo: bottomBar.centerXAnchor),
+            outputs.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            outputs.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -12)
         ])
 
-        canvas.onChange = { [weak self] in self?.refreshUndo() }
+        canvas.onChange = { [weak self] in
+            self?.refreshUndo()
+            self?.updateZoomLabel()
+        }
         canvas.onToolShortcut = { [weak self] tool in self?.selectTool(tool) }
+        DispatchQueue.main.async { [weak self] in self?.updateZoomLabel() }
+    }
+
+    /// A rounded, lightly filled holder for one or more toolbar buttons.
+    private static func capsule(_ views: [NSView]) -> NSView {
+        let stack = NSStackView(views: views)
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 2, right: 4)
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+        stack.layer?.cornerRadius = 9
+        stack.layer?.cornerCurve = .continuous
+        return stack
+    }
+
+    private static func chevron() -> NSView {
+        let image = NSImageView(image: NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil) ?? NSImage())
+        image.symbolConfiguration = .init(pointSize: 8, weight: .bold)
+        image.contentTintColor = .secondaryLabelColor
+        return image
+    }
+
+    private func updateZoomLabel() {
+        zoomButton.item(at: 0)?.title = "\(Int((canvas.currentScale * 100).rounded()))%"
+    }
+
+    private func toggleCanvasLock() {
+        document.canvasLocked.toggle()
+        updateLockIcon()
+        if !document.canvasLocked {
+            document.expandToFitAnnotations()
+            canvas.refresh()
+        }
+    }
+
+    private func updateLockIcon() {
+        let locked = document.canvasLocked
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        lockButton.image = NSImage(systemSymbolName: locked ? "lock.fill" : "lock.open.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        lockButton.toolTip = locked ? "Unlock canvas: let drawings extend past the edges" : "Lock canvas to the picture's size"
+        lockButton.isSelected = !locked
+    }
+
+    /// Add screenshot: select an area of the screen and place it next to the current picture.
+    private func addScreenshot() {
+        window.orderOut(nil)
+        CaptureCoordinator.shared.selectRegion(hint: "Drag an area to add to the picture.") { [weak self] shot, rect in
+            guard let self else { return }
+            self.window.makeKeyAndOrderFront(nil)
+            guard let image = ScreenCapturer.crop(shot, to: rect) else { return }
+            self.canvas.commitText()
+            self.document.addPicture(image, pointSize: rect.size)
+            self.selectTool(.select)
+            self.canvas.refresh()
+            self.refreshUndo()
+        } onCancel: { [weak self] in
+            self?.window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Line width plus arrow, text and crop styles, in one menu.
+    private func showStrokeMenu() {
+        let menu = NSMenu()
+        func header(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        header("Line Width")
+        for (title, width) in zip(["Thin", "Medium", "Thick"], Self.widths) {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                self?.canvas.lineWidth = width
+                self?.updateWidthIcon()
+                self?.canvas.applyStyleToSelection()
+            }
+            item.state = canvas.lineWidth == width ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        appendStyleItems(to: menu)
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: widthButton.bounds.maxY + 4), in: widthButton)
+    }
+
+    /// The rendered picture as a temporary file, for dragging and sharing.
+    private func renderedFile() -> URL? {
+        canvas.commitText()
+        return try? document.rendered()?.temporaryFile()
+    }
+
+    @objc func saveImageAs() {
+        canvas.commitText()
+        guard let result = document.rendered() else { return }
+        do {
+            try result.save(ask: true)
+            Toast.show("Saved")
+        } catch let error as CocoaError where error.code == .userCancelled {
+        } catch {
+            NSAlert(error: error).runModal()
+        }
     }
 
     private func separator() -> NSView {
@@ -188,8 +352,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Arrow shape, text style and crop ratio, with the current choice ticked.
-    private func showStyleMenu() {
-        let menu = NSMenu()
+    private func appendStyleItems(to menu: NSMenu) {
         func header(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -228,7 +391,6 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             item.state = canvas.cropAspect == ratio ? .on : .off
             menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: styleButton.bounds.maxY + 4), in: styleButton)
     }
 
     private func showImageMenu() {
@@ -329,6 +491,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     }
 
     private func refreshUndo() {
+        // Undo and redo are ⌘Z / ⇧⌘Z (no toolbar buttons, like the reference layout).
         undoButton.isEnabled = document.canUndo
         redoButton.isEnabled = document.canRedo
     }
@@ -375,6 +538,7 @@ final class AnnotateWindow: NSWindow {
         case ("z", true) where !editingText: commands?.redo(); return true
         case ("c", false) where !editingText: commands?.copyImage(); return true
         case ("s", false): commands?.saveImage(); return true
+        case ("s", true): commands?.saveImageAs(); return true
         case ("w", false): close(); return true
         default: return super.performKeyEquivalent(with: event)
         }
@@ -383,8 +547,11 @@ final class AnnotateWindow: NSWindow {
 
 /// Toolbar background; dragging it moves the window.
 private final class ToolbarView: NSVisualEffectView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    enum Edge { case top, bottom }
+
+    /// `edge`: where the dividing line goes (bottom for the top bar, top for the bottom bar).
+    init(edge: Edge = .bottom) {
+        super.init(frame: .zero)
         material = .titlebar
         blendingMode = .withinWindow
         let border = NSBox()
@@ -394,7 +561,7 @@ private final class ToolbarView: NSVisualEffectView {
         NSLayoutConstraint.activate([
             border.leadingAnchor.constraint(equalTo: leadingAnchor),
             border.trailingAnchor.constraint(equalTo: trailingAnchor),
-            border.bottomAnchor.constraint(equalTo: bottomAnchor)
+            edge == .bottom ? border.bottomAnchor.constraint(equalTo: bottomAnchor) : border.topAnchor.constraint(equalTo: topAnchor)
         ])
     }
 
@@ -571,5 +738,55 @@ final class ColorPaletteViewController: NSViewController {
         guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
         return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
                        blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+    }
+}
+
+/// "Drag Me": drag the finished picture straight into another app.
+final class DragOutHandle: NSView, NSDraggingSource {
+    private let file: () -> URL?
+
+    init(file: @escaping () -> URL?) {
+        self.file = file
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+        layer?.cornerRadius = 9
+        layer?.cornerCurve = .continuous
+        func grip() -> NSImageView {
+            let view = NSImageView(image: NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil) ?? NSImage())
+            view.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+            view.contentTintColor = .tertiaryLabelColor
+            return view
+        }
+        let label = NSTextField(labelWithString: "Drag Me")
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [grip(), label, grip()])
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            widthAnchor.constraint(equalToConstant: 116), heightAnchor.constraint(equalToConstant: 30)
+        ])
+        toolTip = "Drag the picture into another app"
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let url = file(), let image = NSImage(contentsOf: url) else { return }
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        let size = image.size.applying(.init(scaleX: 140 / max(image.size.width, 1), y: 140 / max(image.size.width, 1)))
+        let point = convert(event.locationInWindow, from: nil)
+        item.setDraggingFrame(CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
+                              contents: image)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : []
     }
 }
