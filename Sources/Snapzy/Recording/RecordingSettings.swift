@@ -136,6 +136,11 @@ final class RecordingSettingsViewController: NSViewController {
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         top.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
+        let minimum = stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
+        minimum.priority = .required
+        minimum.isActive = true
+        stack.setHuggingPriority(.required, for: .vertical)
+        stack.setContentCompressionResistancePriority(.required, for: .vertical)
         return stack
     }
 
@@ -388,7 +393,8 @@ final class ClickOptionsViewController: NSViewController {
             let label = NSTextField(labelWithString: title)
             let row = NSStackView(views: [label, NSView(), control])
             row.alignment = .centerY
-            row.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 10, right: 0)
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.heightAnchor.constraint(equalToConstant: 40).isActive = true
             return row
         }
         let group = RecordingSettingsViewController.groupBox(rows)
@@ -416,6 +422,7 @@ final class ClickOptionsViewController: NSViewController {
         stack.wantsLayer = true
         stack.layer?.backgroundColor = RecordingSettingsViewController.panelColor.cgColor
         view = stack
+        preferredContentSize = stack.fittingSize
     }
 
     private func bind(_ control: NSControl, _ change: @escaping (Any?) -> Void) {
