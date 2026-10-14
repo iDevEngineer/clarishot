@@ -163,12 +163,22 @@ final class CountdownWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { cancelled = true }
 
+    /// Red while there's time, orange for 3 and 2, green for the last second.
+    private func setColor(for n: Int) {
+        let color: NSColor = n == 1 ? .systemGreen : (n <= 3 ? .systemOrange : .systemRed)
+        let animation = CABasicAnimation(keyPath: "backgroundColor")
+        animation.duration = 0.25
+        contentView?.layer?.add(animation, forKey: "color")
+        contentView?.layer?.backgroundColor = color.withAlphaComponent(0.9).cgColor
+    }
+
     /// Counts down from `seconds`. Returns false if cancelled with Esc.
     func run(seconds: Int = 3) async -> Bool {
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
         for n in stride(from: seconds, through: 1, by: -1) {
             label.stringValue = "\(n)"
+            setColor(for: n)
             NSSound(named: "Tink")?.play()
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             if cancelled { break }
