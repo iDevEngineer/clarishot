@@ -156,7 +156,10 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         for (title, value) in [("Fit to Window", nil), ("50%", 0.5), ("100%", 1.0), ("200%", 2.0)] as [(String, CGFloat?)] {
             zoomButton.menu?.addItem(ClosureMenuItem(title: title) { [weak self] in self?.canvas.zoom = value })
         }
-        let zoomCapsule = Self.capsule([zoomButton])
+        let trash = ToolButton(symbol: "trash", tip: "Delete the selected shape, or the screenshot")
+        trash.onClick = { [weak self] in self?.deleteAction() }
+        let zoomCapsule = NSStackView(views: [Self.capsule([trash]), Self.capsule([zoomButton])])
+        zoomCapsule.spacing = 6
         canvas.onZoomChange = { [weak self] in self?.updateZoomLabel() }
 
         let dragHandle = DragOutHandle { [weak self] in self?.renderedFile() }
@@ -167,9 +170,12 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         }
         let pin = ToolButton(symbol: "pin.fill", tip: "Pin to the screen")
         pin.onClick = { [weak self] in
-            guard let self, let result = self.document.rendered() else { return }
+            // Turn the picture into a pin: pin it and close the editor (no second window left open).
+            guard let self else { return }
             self.canvas.commitText()
-            PinWindow.pin(result)
+            guard let result = self.document.rendered() else { return }
+            PinWindow.pin(result.from(self.document.capture.sourceBundleID))
+            self.window.close()
         }
         let copy = ToolButton(symbol: "doc.on.doc.fill", tip: "Copy (⌘C)")
         copy.onClick = { [weak self] in self?.copyImage() }
@@ -472,6 +478,17 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             items.append(group("Snap to Edges", [snap]))
         }
         if tool == .highlighter {
+            let mode = NSSegmentedControl(labels: ["Text", "Marker"], trackingMode: .selectOne, target: nil, action: nil)
+            mode.controlSize = .small
+            mode.selectedSegment = canvas.highlighterMode
+            mode.setToolTip("Tints the text underneath (text stays crisp)", forSegment: 0)
+            mode.setToolTip("A see-through marker stroke on top", forSegment: 1)
+            bindSender(mode) { [weak self] sender in
+                guard let i = (sender as? NSSegmentedControl)?.selectedSegment, i >= 0 else { return }
+                self?.canvas.highlighterMode = i
+                self?.applyToSelection()
+            }
+            items.append(group("Mode", [mode]))
             let snap = NSSwitch()
             snap.controlSize = .mini
             snap.state = Settings.shared.annotateSnapHighlight ? .on : .off
@@ -485,6 +502,25 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             items.append(hint)
         }
         propertiesBar.show(items)
+    }
+
+    /// Bottom-left trash: deletes the selected shape; with nothing selected, discards the screenshot.
+    private func deleteAction() {
+        if canvas.hasSelection {
+            canvas.deleteSelection()
+            refreshUndo()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete this screenshot?"
+        alert.informativeText = "The editor closes without saving. Files already saved aren't touched."
+        alert.icon = AppIcon.current
+        alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.window.close()
+        }
     }
 
     private func applyToSelection() {

@@ -391,10 +391,18 @@ enum AnnotationRenderer {
         case .pencil, .highlighter:
             guard let first = a.points.first else { return }
             if a.tool == .highlighter {
-                ctx.setBlendMode(.multiply)
-                ctx.setStrokeColor(a.color.withAlphaComponent(0.45).cgColor)
+                if a.style == 1 {
+                    // Marker: a see-through pen stroke laid on top, with rounded ends.
+                    ctx.setBlendMode(.normal)
+                    ctx.setStrokeColor(a.color.withAlphaComponent(0.38).cgColor)
+                    ctx.setLineCap(.round)
+                } else {
+                    // Text: tints only what's underneath, so text stays crisp and readable.
+                    ctx.setBlendMode(.multiply)
+                    ctx.setStrokeColor(a.color.withAlphaComponent(0.45).cgColor)
+                    ctx.setLineCap(.butt)
+                }
                 ctx.setLineWidth(a.highlighterWidth)
-                ctx.setLineCap(.butt)
             }
             ctx.move(to: first)
             for p in a.points.dropFirst() { ctx.addLine(to: p) }

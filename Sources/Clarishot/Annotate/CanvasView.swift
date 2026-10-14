@@ -22,6 +22,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         didSet { UserDefaults.standard.set(watermarkText, forKey: "watermarkText") }
     }
     var watermarkStyle: WatermarkStyle = .single
+    /// Highlighter mode: 0 = Text (tints what's under it), 1 = Marker (see-through pen on top).
+    var highlighterMode = 0
     var watermarkSize: CGFloat = 36
     var watermarkOpacity: CGFloat = 0.35
     var watermarkRotation: CGFloat = -30
@@ -333,7 +335,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             changed()
         default:
             draft = Annotation(tool: tool, start: p, end: p, points: [p], color: color, lineWidth: lineWidth,
-                               style: tool == .arrow ? arrowStyle.rawValue : 0,
+                               style: tool == .arrow ? arrowStyle.rawValue : (tool == .highlighter ? highlighterMode : 0),
                                dash: lineDash.rawValue, arrowType: arrowType.rawValue,
                                startHead: startHead.rawValue, endHead: endHead.rawValue)
         }
@@ -486,6 +488,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .text:
             lineWidth = a.lineWidth
             textStyle = a.textStyle
+        case .highlighter:
+            lineWidth = a.lineWidth
+            highlighterMode = a.style
         case .watermark:
             watermarkText = a.text
             watermarkStyle = a.watermarkStyle
@@ -513,6 +518,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .rectangle, .ellipse, .line:
             document.annotations[index].dash = lineDash.rawValue
         case .text: document.annotations[index].style = textStyle.rawValue
+        case .highlighter: document.annotations[index].style = highlighterMode
         case .watermark:
             var mark = document.annotations[index]
             mark.text = watermarkText
@@ -526,6 +532,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         }
         changed()
     }
+
+    var hasSelection: Bool { selectedIndex != nil }
 
     func deleteSelection() {
         guard let index = selectedIndex else { return }
