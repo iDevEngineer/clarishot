@@ -46,15 +46,18 @@ enum SensitiveDataFinder {
         var matches: [Match] = []
         func add(_ rect: CGRect, _ kind: String) {
             let padded = rect.insetBy(dx: -3, dy: -3)
-            func area(_ r: CGRect) -> CGFloat { r.isNull ? 0 : r.width * r.height }
-            // Already covered (≥ 90% of its area): skip. Partly overlapping: merge, so nothing found
-            // is ever left uncovered.
-            if matches.contains(where: { area($0.rect.intersection(padded)) >= area(padded) * 0.9 }) { return }
-            if let i = matches.firstIndex(where: { $0.rect.intersects(padded) }) {
-                matches[i] = Match(rect: matches[i].rect.union(padded), kind: matches[i].kind)
-            } else {
-                matches.append(Match(rect: padded, kind: kind))
+            // Skip only if fully covered already; otherwise merge with every box it touches,
+            // so the whole detected area is always covered.
+            if matches.contains(where: { $0.rect.contains(padded) }) { return }
+            var merged = padded
+            var kind = kind
+            matches.removeAll { existing in
+                guard existing.rect.intersects(merged) else { return false }
+                merged = merged.union(existing.rect)
+                kind = existing.kind
+                return true
             }
+            matches.append(Match(rect: merged, kind: kind))
         }
 
         for (candidate, lineRect) in lines {
