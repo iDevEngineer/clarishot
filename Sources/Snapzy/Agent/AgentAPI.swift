@@ -83,7 +83,13 @@ enum AgentAPI {
             HistoryStore.shared.add(capture)
             Toast.show("Screenshot taken by an AI tool")
         }
-        let url = outputFolder.appendingPathComponent("Snapzy \(Capture.timestamp(capture.date)).png")
+        // Unique even for several captures in the same second.
+        var url = outputFolder.appendingPathComponent("Snapzy \(Capture.timestamp(capture.date)).png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = outputFolder.appendingPathComponent("Snapzy \(Capture.timestamp(capture.date)) (\(n)).png")
+            n += 1
+        }
         guard let png = ImageEncoder.encode(capture.image, as: .png, quality: 1, pointSize: capture.pointSize) else {
             throw AgentError("Could not encode the screenshot")
         }
