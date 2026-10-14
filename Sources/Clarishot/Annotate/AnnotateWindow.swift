@@ -158,8 +158,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         }
         let trash = ToolButton(symbol: "trash", tip: "Delete the selected shape, or the screenshot")
         trash.onClick = { [weak self] in self?.deleteAction() }
-        let zoomCapsule = NSStackView(views: [Self.capsule([trash]), Self.capsule([zoomButton])])
-        zoomCapsule.spacing = 6
+        let zoomCapsule = Self.capsule([zoomButton])
         canvas.onZoomChange = { [weak self] in self?.updateZoomLabel() }
 
         let dragHandle = DragOutHandle { [weak self] in self?.renderedFile() }
@@ -179,7 +178,8 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         }
         let copy = ToolButton(symbol: "doc.on.doc.fill", tip: "Copy (⌘C)")
         copy.onClick = { [weak self] in self?.copyImage() }
-        let outputs = NSStackView(views: [share, pin, copy].map { Self.capsule([$0]) })
+        // Share, pin, copy, then delete at the far right, like the reference.
+        let outputs = NSStackView(views: [share, pin, copy, trash].map { Self.capsule([$0]) })
         outputs.spacing = 6
         for view in [zoomCapsule, dragHandle, outputs] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
