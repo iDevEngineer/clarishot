@@ -1017,28 +1017,121 @@ final class AdvancedPane: SettingsPane {
 }
 
 final class AboutPane: NSViewController {
+    private static let website = URL(string: "https://syncedco.com")!
+    private static let repo = URL(string: "https://github.com/Synced-Co/clarishot")!
+    private var targets: [Callback] = []
+
     override func loadView() {
         let icon = NSImageView(image: AppIcon.current)
+        icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.widthAnchor.constraint(equalToConstant: 128).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 128).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 96).isActive = true
+
         let name = NSTextField(labelWithString: "Clarishot")
-        name.font = .systemFont(ofSize: 22, weight: .bold)
+        name.font = .systemFont(ofSize: 26, weight: .bold)
+        let tagline = NSTextField(labelWithString: "Screenshots & Recording for macOS")
+        tagline.font = .systemFont(ofSize: 12)
+        tagline.textColor = .secondaryLabelColor
         let info = Bundle.main.infoDictionary
         let version = NSTextField(labelWithString:
-            "Version \(info?["CFBundleShortVersionString"] as? String ?? "–") (\(info?["CFBundleVersion"] as? String ?? "–"))")
+            "Clarishot \(info?["CFBundleShortVersionString"] as? String ?? "–") (\(info?["CFBundleVersion"] as? String ?? "–"))")
+        version.font = .systemFont(ofSize: 12)
         version.textColor = .secondaryLabelColor
-        let stack = NSStackView(views: [icon, name, version])
+
+        let updates = NSButton(title: "Check for Updates", target: nil, action: nil)
+        updates.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
+        updates.imagePosition = .imageLeading
+        updates.bezelStyle = .push
+        updates.bezelColor = .controlAccentColor
+        updates.controlSize = .large
+        updates.toolTip = "Opens the latest releases on GitHub"
+        bind(updates) { NSWorkspace.shared.open(Self.repo.appendingPathComponent("releases")) }
+
+        let header = NSStackView(views: [icon, name, tagline, version, updates])
+        header.orientation = .vertical
+        header.alignment = .centerX
+        header.spacing = 6
+        header.setCustomSpacing(12, after: icon)
+        header.setCustomSpacing(14, after: version)
+
+        let madeBy = card([row("Made by", value: plainText("Scott Mackey (Synced)"))])
+        let support = card([row("Support", value: links([
+            ("Website", Self.website),
+            ("GitHub", Self.repo),
+            ("Report a Bug", Self.repo.appendingPathComponent("issues/new"))
+        ]))])
+
+        let stack = NSStackView(views: [header, madeBy, support])
         stack.orientation = .vertical
-        stack.spacing = 8
-        let root = NSView()
+        stack.alignment = .centerX
+        stack.spacing = 20
+        stack.setCustomSpacing(28, after: header)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        let root = NSView()
         root.addSubview(stack)
         NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 56),
             stack.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: root.centerYAnchor)
+            madeBy.widthAnchor.constraint(equalToConstant: 480),
+            support.widthAnchor.constraint(equalToConstant: 480)
         ])
         view = root
+    }
+
+    // MARK: Building blocks
+
+    private func bind(_ button: NSButton, _ action: @escaping () -> Void) {
+        let target = Callback { _ in action() }
+        targets.append(target)
+        button.target = target
+        button.action = #selector(Callback.fire(_:))
+    }
+
+    private func card(_ rows: [NSView]) -> NSView {
+        let box = RecordingSettingsViewController.groupBox(rows)
+        box.translatesAutoresizingMaskIntoConstraints = false
+        return box
+    }
+
+    private func row(_ title: String, value: NSView) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        let line = NSStackView(views: [label, NSView(), value])
+        line.alignment = .top
+        let container = NSView()
+        line.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            line.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            line.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+        return container
+    }
+
+    private func plainText(_ text: String) -> NSTextField {
+        let field = NSTextField(labelWithString: text)
+        field.font = .systemFont(ofSize: 13, weight: .semibold)
+        return field
+    }
+
+    /// Right-aligned links, one per line, each with a ↗.
+    private func links(_ items: [(String, URL)]) -> NSView {
+        let stack = NSStackView(views: items.map { title, url -> NSView in
+            let button = NSButton(title: "\(title) ↗", target: nil, action: nil)
+            button.isBordered = false
+            button.contentTintColor = .linkColor
+            button.font = .systemFont(ofSize: 13, weight: .medium)
+            button.toolTip = url.absoluteString
+            bind(button) { NSWorkspace.shared.open(url) }
+            return button
+        })
+        stack.orientation = .vertical
+        stack.alignment = .trailing
+        stack.spacing = 8
+        return stack
     }
 }
 
