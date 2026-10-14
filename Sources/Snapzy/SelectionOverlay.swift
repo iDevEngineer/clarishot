@@ -203,6 +203,8 @@ final class OverlayView: NSView {
         case .none:
             return
         case .drawing(var start):
+            // Read the Space key's state directly: key presses don't reliably reach us mid-drag.
+            spaceHeld = CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(49))
             if spaceHeld, let last = lastDragPoint, let current = selection {
                 // Move the box (and its anchor corner) with the mouse, kept on screen.
                 var dx = point.x - last.x, dy = point.y - last.y
