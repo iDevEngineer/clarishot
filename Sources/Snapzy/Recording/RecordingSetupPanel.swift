@@ -90,7 +90,7 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         level = .screenSaver
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = true
+        hasShadow = false // the cards draw their own soft shadow; the window's made a dark outline
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         appearance = NSAppearance(named: .darkAqua)
         buildContent()
@@ -120,11 +120,12 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         sizeRow.spacing = 6
 
         let toggleSpecs: [(String, String, String, WritableKeyPath<RecordingOptions, Bool>)] = [
-            ("mic", "mic.fill", "Record microphone", \.microphone),
-            ("speaker.slash", "speaker.wave.2.fill", "Record computer audio", \.systemAudio),
-            ("video.slash", "video.fill", "Show camera", \.camera),
-            ("cursorarrow.click", "cursorarrow.click.2", "Highlight clicks", \.highlightClicks),
-            ("command.square", "command.square.fill", "Show keystrokes", \.showKeystrokes)
+            // Same icon on and off (it turns blue when on), like the reference.
+            ("mic", "mic", "Record microphone", \.microphone),
+            ("tv.and.hifispeaker.fill", "tv.and.hifispeaker.fill", "Record computer audio", \.systemAudio),
+            ("video", "video", "Show camera", \.camera),
+            ("cursorarrow.rays", "cursorarrow.rays", "Highlight clicks", \.highlightClicks),
+            ("command.square.fill", "command.square.fill", "Show keystrokes", \.showKeystrokes)
         ]
         toggles = toggleSpecs.map { off, on, tip, path in
             let button = PanelIconButton(symbol: off, onSymbol: on, tip: tip)
@@ -173,17 +174,19 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
     }
 
     /// Slightly lighter rounded box grouping controls.
-    /// A frosted dark card with a faint light edge.
+    /// A solid dark charcoal card with a thin light edge and a soft shadow, so it looks
+    /// the same over light or dark backgrounds.
     private func card(_ views: [NSView], spacing: CGFloat = 8, padding: CGFloat = 8) -> NSView {
-        let blur = NSVisualEffectView()
-        blur.material = .hudWindow
-        blur.state = .active
-        blur.blendingMode = .behindWindow
+        let blur = NSView()
         blur.wantsLayer = true
+        blur.layer?.backgroundColor = NSColor(white: 0.16, alpha: 0.96).cgColor
         blur.layer?.cornerRadius = 18
-        blur.layer?.masksToBounds = true
-        blur.layer?.borderWidth = 1
-        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        blur.layer?.borderWidth = 0.5
+        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        blur.layer?.shadowColor = NSColor.black.cgColor
+        blur.layer?.shadowOpacity = 0.3
+        blur.layer?.shadowRadius = 10
+        blur.layer?.shadowOffset = CGSize(width: 0, height: -3)
 
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
@@ -409,10 +412,10 @@ final class PanelIconButton: NSButton {
         image = NSImage(systemSymbolName: isOn ? onSymbol : offSymbol, accessibilityDescription: toolTip)?
             .withSymbolConfiguration(config)
         if isToggle {
-            contentTintColor = isOn ? .white : NSColor.white.withAlphaComponent(0.5)
-            layer?.backgroundColor = isOn ? NSColor.white.withAlphaComponent(0.14).cgColor : nil
+            contentTintColor = isOn ? .controlAccentColor : NSColor.white.withAlphaComponent(0.85)
+            layer?.backgroundColor = isOn ? NSColor.white.withAlphaComponent(0.12).cgColor : nil
         } else {
-            contentTintColor = NSColor.white.withAlphaComponent(0.8)
+            contentTintColor = NSColor.white.withAlphaComponent(0.85)
         }
     }
 
@@ -433,10 +436,10 @@ final class SizeField: NSTextField {
         textColor = .white
         isBordered = false
         drawsBackground = true
-        backgroundColor = NSColor.white.withAlphaComponent(0.08)
+        backgroundColor = NSColor.white.withAlphaComponent(0.1)
         focusRingType = .none
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = 8
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: 56).isActive = true
     }
