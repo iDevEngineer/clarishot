@@ -73,7 +73,7 @@ final class RecordingSettingsViewController: NSViewController {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 20
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         // Scroll if it's taller than the screen allows.
@@ -92,7 +92,8 @@ final class RecordingSettingsViewController: NSViewController {
                                                 height: min(size.height, ((NSScreen.main?.visibleFrame.height ?? 900) - 120) * 2 / 3)))
         scroll.documentView = document
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = Self.panelColor
         scroll.autohidesScrollers = true
         view = scroll
         preferredContentSize = scroll.frame.size
@@ -103,28 +104,13 @@ final class RecordingSettingsViewController: NSViewController {
     private func section(_ title: String, _ rows: [NSView]) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        var items: [NSView] = []
-        for (index, row) in rows.enumerated() {
-            if index > 0 { items.append(Self.hairline()) }
-            items.append(row)
-        }
-        let group = NSStackView(views: items)
-        group.orientation = .vertical
-        group.spacing = 0
-        group.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
-        group.wantsLayer = true
-        group.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
-        group.layer?.cornerRadius = 10
-        for item in items {
-            item.translatesAutoresizingMaskIntoConstraints = false
-            item.widthAnchor.constraint(equalTo: group.widthAnchor, constant: -24).isActive = true
-        }
+        let group = Self.groupBox(rows)
         let column = NSStackView(views: [label, group])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 8
         group.translatesAutoresizingMaskIntoConstraints = false
-        group.widthAnchor.constraint(equalToConstant: Self.width - 32).isActive = true
+        group.widthAnchor.constraint(equalToConstant: Self.width - 40).isActive = true
         return column
     }
 
@@ -146,11 +132,51 @@ final class RecordingSettingsViewController: NSViewController {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 3
-        stack.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 10, right: 0)
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         top.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
         return stack
+    }
+
+    /// Solid dark background for a popover's content (the default material is see-through).
+    static let panelColor = NSColor(white: 0.14, alpha: 1)
+
+    /// Rows inside a lighter rounded box, separated by hairlines.
+    static func groupBox(_ rows: [NSView]) -> NSView {
+        var items: [NSView] = []
+        for (index, row) in rows.enumerated() {
+            if index > 0 { items.append(hairline()) }
+            items.append(row)
+        }
+        let stack = NSStackView(views: items)
+        stack.orientation = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let box = NSView()
+        box.wantsLayer = true
+        box.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
+        box.layer?.cornerRadius = 10
+        box.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: box.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14)
+        ])
+        for item in items {
+            item.translatesAutoresizingMaskIntoConstraints = false
+            item.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        return box
+    }
+
+    /// Pop-up menu drawn as plain text with up/down arrows, like the reference.
+    static func plainPopup() -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.isBordered = false
+        popup.controlSize = .regular
+        return popup
     }
 
     /// A 1-point divider between rows (NSBox separators added uneven extra height).
@@ -207,8 +233,7 @@ final class RecordingSettingsViewController: NSViewController {
     }
 
     private func popup<T: Equatable>(_ titles: [String], values: [T], _ path: WritableKeyPath<RecordingOptions, T>) -> NSPopUpButton {
-        let control = NSPopUpButton(frame: .zero, pullsDown: false)
-        control.controlSize = .small
+        let control = Self.plainPopup()
         control.addItems(withTitles: titles)
         control.selectItem(at: values.firstIndex(of: options[keyPath: path]) ?? 0)
         let target = Callback { [unowned self] sender in
@@ -341,15 +366,15 @@ final class ClickOptionsViewController: NSViewController {
         let size = NSSlider(value: options.clickScale, minValue: 0, maxValue: 1, target: nil, action: nil)
         size.numberOfTickMarks = 3
         size.translatesAutoresizingMaskIntoConstraints = false
-        size.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        size.widthAnchor.constraint(equalToConstant: 190).isActive = true
         bind(size) { [unowned self] in self.options.clickScale = ($0 as? NSSlider)?.doubleValue ?? 0.5 }
 
-        let color = NSPopUpButton(frame: .zero, pullsDown: false)
+        let color = RecordingSettingsViewController.plainPopup()
         color.addItems(withTitles: RecordingOptions.clickColors.map(\.name))
         color.selectItem(at: options.clickColor)
         bind(color) { [unowned self] in self.options.clickColor = ($0 as? NSPopUpButton)?.indexOfSelectedItem ?? 0 }
 
-        let style = NSPopUpButton(frame: .zero, pullsDown: false)
+        let style = RecordingSettingsViewController.plainPopup()
         style.addItems(withTitles: ["Outline", "Filled"])
         style.selectItem(at: options.clickFilled ? 1 : 0)
         bind(style) { [unowned self] in self.options.clickFilled = ($0 as? NSPopUpButton)?.indexOfSelectedItem == 1 }
@@ -358,27 +383,15 @@ final class ClickOptionsViewController: NSViewController {
         animate.state = options.clickAnimate ? .on : .off
         bind(animate) { [unowned self] in self.options.clickAnimate = ($0 as? NSSwitch)?.state == .on }
 
-        var rows: [NSView] = []
-        for (index, (title, control)) in [("Size", size as NSView), ("Color", color), ("Style", style),
-                                          ("Animate clicks", animate)].enumerated() {
-            if index > 0 { rows.append(RecordingSettingsViewController.hairline()) }
+        let rows: [NSView] = [("Size", size as NSView), ("Color", color), ("Style", style),
+                              ("Animate clicks", animate)].map { title, control in
             let label = NSTextField(labelWithString: title)
             let row = NSStackView(views: [label, NSView(), control])
             row.alignment = .centerY
-            row.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
-            rows.append(row)
+            row.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 10, right: 0)
+            return row
         }
-        let group = NSStackView(views: rows)
-        group.orientation = .vertical
-        group.spacing = 0
-        group.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
-        group.wantsLayer = true
-        group.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
-        group.layer?.cornerRadius = 10
-        for row in rows {
-            row.translatesAutoresizingMaskIntoConstraints = false
-            row.widthAnchor.constraint(equalTo: group.widthAnchor, constant: -24).isActive = true
-        }
+        let group = RecordingSettingsViewController.groupBox(rows)
 
         let preview = ClickPreviewView { [unowned self] in self.options }
         preview.translatesAutoresizingMaskIntoConstraints = false
@@ -389,14 +402,19 @@ final class ClickOptionsViewController: NSViewController {
         done.keyEquivalent = "\r"
         let footer = NSStackView(views: [NSView(), done])
 
-        let stack = NSStackView(views: [group, preview, RecordingSettingsViewController.hairline(), footer])
+        let divider = RecordingSettingsViewController.hairline()
+        let stack = NSStackView(views: [group, preview, divider, footer])
         stack.orientation = .vertical
-        stack.spacing = 14
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 12, right: 14)
+        stack.spacing = 16
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 16, right: 20)
         for v in [group, preview, footer] {
             v.translatesAutoresizingMaskIntoConstraints = false
-            v.widthAnchor.constraint(equalToConstant: Self.width - 28).isActive = true
+            v.widthAnchor.constraint(equalToConstant: Self.width - 40).isActive = true
         }
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = RecordingSettingsViewController.panelColor.cgColor
         view = stack
     }
 
@@ -422,7 +440,7 @@ private final class ClickPreviewView: NSView {
         self.options = options
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
         let label = NSTextField(labelWithString: "Click here to preview")
