@@ -419,19 +419,12 @@ enum AnnotationRenderer {
         let curved = a.arrowStyle == .curved
         switch a.arrowLook {
         case .tapered:
-            if curved { drawCurvedArrow(a, ctx) } else {
-                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
-                ctx.fillPath()
-            }
+            ctx.addPath(curved ? curvedArrowPath(a) : arrowPath(from: a.start, to: a.end, width: a.lineWidth))
+            ctx.fillPath()
         case .outlined:
             ctx.setLineWidth(max(1.5, a.lineWidth * 0.5))
             ctx.setLineJoin(.round)
-            if curved {
-                let path = curvedArrowOutline(a)
-                ctx.addPath(path)
-            } else {
-                ctx.addPath(arrowPath(from: a.start, to: a.end, width: a.lineWidth))
-            }
+            ctx.addPath(curved ? curvedArrowPath(a) : arrowPath(from: a.start, to: a.end, width: a.lineWidth))
             ctx.strokePath()
         case .classic:
             drawClassicArrow(a, ctx, curved: curved)
@@ -483,44 +476,54 @@ enum AnnotationRenderer {
         head(a.endEnd, at: a.end, out: outEnd)
     }
 
-    /// Hollow outline of a curved tapered arrow (shaft edges follow the curve).
-    private static func curvedArrowOutline(_ a: Annotation) -> CGPath {
-        let w = a.lineWidth, c = a.curveControl, end = a.end
-        let dx = end.x - c.x, dy = end.y - c.y, l = max(hypot(dx, dy), 0.001)
-        let u = CGPoint(x: dx / l, y: dy / l), n = CGPoint(x: -u.y, y: u.x)
-        let headLength = min(w * 4.5 + 6, hypot(end.x - a.start.x, end.y - a.start.y) * 0.5)
-        let headWidth = w * 3.6 + 6, shaft = w * 1.3
-        let base = CGPoint(x: end.x - u.x * headLength, y: end.y - u.y * headLength)
-        func off(_ p: CGPoint, _ d: CGFloat) -> CGPoint { CGPoint(x: p.x + n.x * d, y: p.y + n.y * d) }
+    /// A curved arrow as one closed shape: the shaft follows the curve and widens from a thin tail
+    /// to the head, matching the straight tapered arrow. Filled for tapered, stroked for outlined.
+    static func curvedArrowPath(_ a: Annotation) -> CGPath {
+        let w = a.lineWidth, s0 = a.start, c = a.curveControl, e = a.end
+        func point(_ t: CGFloat) -> CGPoint {
+            let u = 1 - t
+            return CGPoint(x: u * u * s0.x + 2 * u * t * c.x + t * t * e.x, y: u * u * s0.y + 2 * u * t * c.y + t * t * e.y)
+        }
+        func tangent(_ t: CGFloat) -> CGPoint {
+            let dx = 2 * (1 - t) * (c.x - s0.x) + 2 * t * (e.x - c.x)
+            let dy = 2 * (1 - t) * (c.y - s0.y) + 2 * t * (e.y - c.y)
+            let l = max(hypot(dx, dy), 0.001)
+            return CGPoint(x: dx / l, y: dy / l)
+        }
+        let chord = hypot(e.x - s0.x, e.y - s0.y)
+        let headLength = min(w * 4.5 + 6, chord * 0.6)
+        let headWidth = w * 3.6 + 6, tailWidth = w * 0.4, shaftWidth = w * 1.3
+
+        // Where the head starts: the last point along the curve at least headLength from the tip.
+        let steps = 48
+        var baseT: CGFloat = 0
+        for i in stride(from: steps, through: 0, by: -1) {
+            let t = CGFloat(i) / CGFloat(steps)
+            let p = point(t)
+            if hypot(e.x - p.x, e.y - p.y) >= headLength { baseT = t; break }
+        }
+        var left: [CGPoint] = [], right: [CGPoint] = []
+        for i in 0...steps {
+            let t = baseT * CGFloat(i) / CGFloat(steps)
+            let p = point(t), d = tangent(t), n = CGPoint(x: -d.y, y: d.x)
+            let half = (tailWidth + (shaftWidth - tailWidth) * (t / max(baseT, 0.001))) / 2
+            left.append(CGPoint(x: p.x + n.x * half, y: p.y + n.y * half))
+            right.append(CGPoint(x: p.x - n.x * half, y: p.y - n.y * half))
+        }
+        let base = point(baseT)
+        let dir = CGPoint(x: (e.x - base.x) / max(hypot(e.x - base.x, e.y - base.y), 0.001),
+                          y: (e.y - base.y) / max(hypot(e.x - base.x, e.y - base.y), 0.001))
+        let n = CGPoint(x: -dir.y, y: dir.x)
+
         let path = CGMutablePath()
-        path.move(to: a.start)
-        path.addQuadCurve(to: off(base, shaft / 2), control: off(c, shaft / 2))
-        path.addLine(to: off(base, headWidth / 2))
-        path.addLine(to: end)
-        path.addLine(to: off(base, -headWidth / 2))
-        path.addLine(to: off(base, -shaft / 2))
-        path.addQuadCurve(to: a.start, control: off(c, -shaft / 2))
+        path.move(to: left[0])
+        for p in left.dropFirst() { path.addLine(to: p) }
+        path.addLine(to: CGPoint(x: base.x + n.x * headWidth / 2, y: base.y + n.y * headWidth / 2))
+        path.addLine(to: e)
+        path.addLine(to: CGPoint(x: base.x - n.x * headWidth / 2, y: base.y - n.y * headWidth / 2))
+        for p in right.reversed() { path.addLine(to: p) }
         path.closeSubpath()
         return path
-    }
-
-    private static func drawCurvedArrow(_ a: Annotation, _ ctx: CGContext) {
-        let c = a.curveControl, end = a.end, w = a.lineWidth
-        let dx = end.x - c.x, dy = end.y - c.y
-        let length = max(hypot(dx, dy), 0.001)
-        let u = CGPoint(x: dx / length, y: dy / length), n = CGPoint(x: -u.y, y: u.x)
-        let headLength = min(w * 4.5 + 6, hypot(end.x - a.start.x, end.y - a.start.y) * 0.5)
-        let headWidth = w * 3.6 + 6
-        let base = CGPoint(x: end.x - u.x * headLength, y: end.y - u.y * headLength)
-        ctx.setLineWidth(w * 1.3)
-        ctx.move(to: a.start)
-        ctx.addQuadCurve(to: base, control: c)
-        ctx.strokePath()
-        ctx.move(to: CGPoint(x: base.x + n.x * headWidth / 2, y: base.y + n.y * headWidth / 2))
-        ctx.addLine(to: end)
-        ctx.addLine(to: CGPoint(x: base.x - n.x * headWidth / 2, y: base.y - n.y * headWidth / 2))
-        ctx.closePath()
-        ctx.fillPath()
     }
 
     /// Tapered arrow: thin at the tail, widening into a solid head.
