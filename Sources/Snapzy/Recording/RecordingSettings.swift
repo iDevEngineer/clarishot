@@ -53,12 +53,6 @@ final class RecordingSettingsViewController: NSViewController {
                     note: "Records sound coming from other apps."),
                 row("Microphone", control: devicePopup(Devices.microphones(), \.microphoneDeviceID))
             ]),
-            section("Camera", [
-                row("Camera", control: devicePopup(Devices.cameras(), \.cameraDeviceID)),
-                row("Size", control: popup(["Small", "Medium", "Large"], values: [0, 1, 2], \.cameraSize)),
-                row("Shape", control: popup(["Circle", "Rounded square"], values: [false, true], \.cameraRounded)),
-                row("Mirror camera", control: optionToggle(\.cameraMirrored))
-            ]),
             section("GIF", [
                 row("Frame rate", control: popup(["10 fps", "15 fps", "20 fps", "30 fps"], values: [10, 15, 20, 30], \.gifFPS)),
                 row("Resolution", control: popup(["480 × auto", "640 × auto", "800 × auto (default)", "1024 × auto",
@@ -67,6 +61,12 @@ final class RecordingSettingsViewController: NSViewController {
                 row("Optimize GIFs", control: optionToggle(\.gifOptimize),
                     note: "Merges frames that don't change, for smaller files."),
                 row("Quality", control: qualitySlider())
+            ]),
+            section("Camera", [
+                row("Camera", control: devicePopup(Devices.cameras(), \.cameraDeviceID)),
+                row("Size", control: popup(["Small", "Medium", "Large"], values: [0, 1, 2], \.cameraSize)),
+                row("Shape", control: popup(["Circle", "Rounded square"], values: [false, true], \.cameraRounded)),
+                row("Mirror camera", control: optionToggle(\.cameraMirrored))
             ])
         ])
         stack.orientation = .vertical
