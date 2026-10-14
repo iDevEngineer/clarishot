@@ -112,7 +112,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
         // Middle: every drawing tool in one rounded strip.
         let drawing: [Tool] = [.select, .rectangle, .filledRectangle, .ellipse, .line, .arrow, .text,
-                               .pixelate, .blur, .spotlight, .counter, .pencil, .highlighter]
+                               .pixelate, .blur, .spotlight, .counter, .pencil, .highlighter, .watermark]
         let toolsCapsule = Self.capsule(drawing.map { tool in
             let button = ToolButton(symbol: tool.symbol, tip: "\(tool.title) (\(tool.key.uppercased()))")
             button.onClick = { [weak self] in self?.selectTool(tool) }
@@ -355,6 +355,8 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         propertyTargets.removeAll()
         let selected = canvas.selectedAnnotation
         let tool = selected?.tool ?? canvas.tool
+        // Editing a shape starts from its own settings, so changing one setting leaves the others alone.
+        if let selected { canvas.loadDefaults(from: selected) }
         var items: [NSView] = []
 
         let icon = NSImageView(image: NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) ?? NSImage())
@@ -365,6 +367,34 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         let drawsLines: Set<Tool> = [.rectangle, .ellipse, .line, .arrow, .pencil, .highlighter]
         let hasColor: Set<Tool> = drawsLines.union([.filledRectangle, .text, .counter])
 
+        if tool == .watermark {
+            colorButton.color = selected?.color ?? canvas.color
+            let field = NSTextField(string: canvas.watermarkText)
+            field.placeholderString = "Watermark text"
+            field.controlSize = .small
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.widthAnchor.constraint(equalToConstant: 150).isActive = true
+            bindSender(field) { [weak self] sender in
+                self?.canvas.watermarkText = (sender as? NSTextField)?.stringValue ?? ""
+                self?.applyToSelection()
+            }
+            let style = segmented(["textformat", "line.diagonal", "square.grid.3x3"].map(Self.symbol),
+                                  selected: canvas.watermarkStyle.rawValue, tips: WatermarkStyle.allCases.map(\.title)) { [weak self] i in
+                self?.canvas.watermarkStyle = WatermarkStyle(rawValue: i) ?? .single
+                self?.applyToSelection()
+            }
+            items.append(group("Text", [field]))
+            items.append(group("Style", [style]))
+            items.append(group("Color", [colorButton]))
+            items.append(group("Size", [valueSlider(canvas.watermarkSize, 12...160, format: { "\(Int($0))" }) { [weak self] in
+                self?.canvas.watermarkSize = $0 }]))
+            items.append(group("Opacity", [valueSlider(canvas.watermarkOpacity, 0.05...1, format: { "\(Int(($0 * 100).rounded()))%" }) { [weak self] in
+                self?.canvas.watermarkOpacity = $0 }]))
+            items.append(group("Rotation", [valueSlider(canvas.watermarkRotation, -90...90, format: { "\(Int($0))°" }) { [weak self] in
+                self?.canvas.watermarkRotation = $0 }]))
+            propertiesBar.show(items)
+            return
+        }
         if hasColor.contains(tool) {
             colorButton.color = selected?.color ?? canvas.color
             items.append(group("Color", [colorButton]))
@@ -460,6 +490,28 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private func applyToSelection() {
         guard canvas.selectedAnnotation != nil else { return }
         canvas.applyStyleToSelection()
+    }
+
+    /// A small slider with its value beside it; changes apply to the selected shape.
+    private func valueSlider(_ value: CGFloat, _ range: ClosedRange<CGFloat>, format: @escaping (CGFloat) -> String,
+                             set: @escaping (CGFloat) -> Void) -> NSView {
+        let slider = NSSlider(value: Double(value), minValue: Double(range.lowerBound), maxValue: Double(range.upperBound),
+                              target: nil, action: nil)
+        slider.controlSize = .small
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        let label = NSTextField(labelWithString: format(value))
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        bindSender(slider) { [weak self] sender in
+            let v = CGFloat((sender as? NSSlider)?.doubleValue ?? Double(value))
+            label.stringValue = format(v)
+            set(v)
+            self?.applyToSelection()
+        }
+        let stack = NSStackView(views: [slider, label])
+        stack.spacing = 6
+        return stack
     }
 
     private func strokeSlider(value: CGFloat) -> NSView {

@@ -17,6 +17,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     var arrowType: ArrowType = .tapered
     var startHead: ArrowHead = .none
     var endHead: ArrowHead = .arrow
+    // Watermark defaults (text is remembered between sessions).
+    var watermarkText = UserDefaults.standard.string(forKey: "watermarkText") ?? "© Clarishot" {
+        didSet { UserDefaults.standard.set(watermarkText, forKey: "watermarkText") }
+    }
+    var watermarkStyle: WatermarkStyle = .single
+    var watermarkSize: CGFloat = 36
+    var watermarkOpacity: CGFloat = 0.35
+    var watermarkRotation: CGFloat = -30
     /// Told whenever the selected shape changes, so the properties bar can follow it.
     var onSelectionChange: (() -> Void)?
 
@@ -312,6 +320,17 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             document.annotations.append(Annotation(tool: .counter, start: p, end: p, color: color,
                                                    lineWidth: lineWidth, number: document.nextCounterNumber))
             changed()
+        case .watermark:
+            // Diagonal and tiled cover the whole picture, so they sit at its centre.
+            let centre = watermarkStyle == .single ? p : CGPoint(x: document.crop.midX, y: document.crop.midY)
+            var mark = Annotation(tool: .watermark, start: centre, end: centre, color: color, lineWidth: watermarkSize,
+                                  text: watermarkText, style: watermarkStyle.rawValue)
+            mark.opacity = watermarkOpacity
+            mark.rotation = watermarkRotation
+            document.checkpoint()
+            document.annotations.append(mark)
+            selectedIndex = document.annotations.count - 1
+            changed()
         default:
             draft = Annotation(tool: tool, start: p, end: p, points: [p], color: color, lineWidth: lineWidth,
                                style: tool == .arrow ? arrowStyle.rawValue : 0,
@@ -450,6 +469,34 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     /// Applies a colour or width change to the selected shape, if any.
+    /// Copies a shape's own settings into the current defaults (used when it's selected).
+    func loadDefaults(from a: Annotation) {
+        color = a.color
+        switch a.tool {
+        case .arrow:
+            lineWidth = a.lineWidth
+            arrowStyle = a.arrowStyle
+            arrowType = a.arrowLook
+            startHead = a.startEnd
+            endHead = a.endEnd
+            lineDash = a.lineDash
+        case .rectangle, .ellipse, .line:
+            lineWidth = a.lineWidth
+            lineDash = a.lineDash
+        case .text:
+            lineWidth = a.lineWidth
+            textStyle = a.textStyle
+        case .watermark:
+            watermarkText = a.text
+            watermarkStyle = a.watermarkStyle
+            watermarkSize = a.lineWidth
+            watermarkOpacity = a.opacity
+            watermarkRotation = a.rotation
+        default:
+            lineWidth = a.lineWidth
+        }
+    }
+
     func applyStyleToSelection() {
         guard let index = selectedIndex else { return }
         document.checkpoint()
@@ -466,6 +513,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .rectangle, .ellipse, .line:
             document.annotations[index].dash = lineDash.rawValue
         case .text: document.annotations[index].style = textStyle.rawValue
+        case .watermark:
+            var mark = document.annotations[index]
+            mark.text = watermarkText
+            mark.style = watermarkStyle.rawValue
+            mark.lineWidth = watermarkSize
+            mark.opacity = watermarkOpacity
+            mark.rotation = watermarkRotation
+            if mark.watermarkStyle != .single { mark.start = CGPoint(x: document.crop.midX, y: document.crop.midY); mark.end = mark.start }
+            document.annotations[index] = mark
         default: break
         }
         changed()

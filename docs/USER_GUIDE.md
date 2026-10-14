@@ -117,6 +117,7 @@ Open the editor from the preview card's pencil, from **Capture & Annotate**, or 
 | S | Spotlight |
 | N | Counter (1, 2, 3…) |
 | P | Pencil |
+| W | Watermark (single, diagonal or tiled text) |
 
 - **Undo / Redo**: ⌘Z / ⇧⌘Z. **Copy**: ⌘C. **Save**: ⌘S.
 - **Double-click** text to edit it.

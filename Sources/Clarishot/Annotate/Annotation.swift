@@ -4,6 +4,7 @@ import CoreImage
 /// Editor tools, in toolbar order. `key` is the single-letter shortcut.
 enum Tool: CaseIterable {
     case select, crop, rectangle, filledRectangle, ellipse, line, arrow, text, highlighter, pixelate, blur, spotlight, counter, pencil
+    case watermark
     /// A placed picture (Add screenshot). Not a toolbar tool.
     case picture
 
@@ -23,6 +24,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "flashlight.on.fill"
         case .counter: return "1.circle"
         case .pencil: return "scribble"
+        case .watermark: return "c.circle"
         case .picture: return "photo"
         }
     }
@@ -43,6 +45,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "Spotlight"
         case .counter: return "Counter"
         case .pencil: return "Pencil"
+        case .watermark: return "Watermark"
         case .picture: return "Picture"
         }
     }
@@ -63,6 +66,7 @@ enum Tool: CaseIterable {
         case .spotlight: return "s"
         case .counter: return "n"
         case .pencil: return "p"
+        case .watermark: return "w"
         case .picture: return ""
         }
     }
@@ -96,6 +100,18 @@ enum ArrowHead: Int, CaseIterable {
         case .none: return "None"
         case .arrow: return "Arrow"
         case .dot: return "Dot"
+        }
+    }
+}
+
+/// Watermark layout: one label where you click, one large label across the picture, or a repeating pattern.
+enum WatermarkStyle: Int, CaseIterable {
+    case single, diagonal, tiled
+    var title: String {
+        switch self {
+        case .single: return "Single"
+        case .diagonal: return "Diagonal"
+        case .tiled: return "Tiled"
         }
     }
 }
@@ -173,6 +189,19 @@ struct Annotation {
     var endHead = 1
     /// A curved arrow's bend point when the user has dragged it; nil = the default curve.
     var control: CGPoint?
+    /// Watermark: opacity 0.05…1 and rotation in degrees. Size is `lineWidth` (font size); layout is `style`.
+    var opacity: CGFloat = 0.35
+    var rotation: CGFloat = -30
+
+    var watermarkStyle: WatermarkStyle { WatermarkStyle(rawValue: style) ?? .single }
+
+    /// The watermark text as drawn.
+    func watermarkText() -> NSAttributedString {
+        NSAttributedString(string: text.isEmpty ? " " : text, attributes: [
+            .font: NSFont.systemFont(ofSize: lineWidth, weight: .semibold),
+            .foregroundColor: color.withAlphaComponent(opacity)
+        ])
+    }
 
     var lineDash: LineDash { LineDash(rawValue: dash) ?? .solid }
     var arrowLook: ArrowType { ArrowType(rawValue: arrowType) ?? .tapered }
@@ -214,7 +243,7 @@ struct Annotation {
         case .pencil, .highlighter: return points.count < 2
         case .line, .arrow: return hypot(end.x - start.x, end.y - start.y) < 3
         case .text: return text.isEmpty
-        case .counter: return false
+        case .counter, .watermark: return false
         default: return rect.width < 3 || rect.height < 3
         }
     }
@@ -238,6 +267,10 @@ struct Annotation {
         case .counter:
             let d = counterDiameter
             base = CGRect(x: start.x - d / 2, y: start.y - d / 2, width: d, height: d)
+        case .watermark:
+            // The label around its centre (tiled and diagonal ones are selected by this centre label too).
+            let size = watermarkText().size()
+            base = CGRect(x: start.x - size.width / 2, y: start.y - size.height / 2, width: size.width, height: size.height)
         default:
             base = rect
         }
@@ -323,6 +356,9 @@ enum AnnotationRenderer {
         }
 
         switch a.tool {
+        case .watermark:
+            drawWatermark(a, ctx, imageSize: imageSize)
+
         case .picture:
             if let picture = a.picture { drawImage(picture, in: a.rect, ctx: ctx) }
 
@@ -413,6 +449,48 @@ enum AnnotationRenderer {
     }
 
     /// Bent arrow: a curved shaft ending in a solid head that follows the curve.
+    /// Draws a watermark: one label at its point, one big label across the middle, or a rotated tiled pattern.
+    private static func drawWatermark(_ a: Annotation, _ ctx: CGContext, imageSize: CGSize) {
+        var mark = a
+        let canvas = CGRect(origin: .zero, size: imageSize)
+        if mark.watermarkStyle == .diagonal {
+            // Big enough to run most of the way across the picture.
+            let probe = Annotation(tool: .watermark, start: .zero, end: .zero, color: a.color, lineWidth: 100, text: a.text)
+            let width = max(probe.watermarkText().size().width, 1)
+            mark.lineWidth = max(a.lineWidth, hypot(imageSize.width, imageSize.height) * 0.7 / width * 100)
+        }
+        let label = mark.watermarkText()
+        let size = label.size()
+        let angle = mark.rotation * .pi / 180
+        func draw(at centre: CGPoint) {
+            ctx.saveGState()
+            ctx.translateBy(x: centre.x, y: centre.y)
+            ctx.rotate(by: angle)
+            withFlippedNSContext(ctx) { label.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2)) }
+            ctx.restoreGState()
+        }
+        switch mark.watermarkStyle {
+        case .single: draw(at: a.start)
+        case .diagonal: draw(at: CGPoint(x: canvas.midX, y: canvas.midY))
+        case .tiled:
+            ctx.saveGState()
+            ctx.clip(to: canvas)
+            let stepX = size.width + max(40, mark.lineWidth * 2), stepY = size.height + max(60, mark.lineWidth * 3)
+            var row = 0
+            var y = canvas.minY - stepY
+            while y < canvas.maxY + stepY {
+                var x = canvas.minX - stepX + (row % 2 == 0 ? 0 : stepX / 2)
+                while x < canvas.maxX + stepX {
+                    draw(at: CGPoint(x: x, y: y))
+                    x += stepX
+                }
+                y += stepY
+                row += 1
+            }
+            ctx.restoreGState()
+        }
+    }
+
     /// All arrow looks: tapered (filled shape), classic (line + chosen heads, may be dashed),
     /// outlined (hollow tapered shape); each straight or curved.
     private static func drawArrow(_ a: Annotation, _ ctx: CGContext) {

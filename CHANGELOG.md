@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- Annotate: properties bar for the current tool or selected shape.
+- Arrows: classic, tapered and outlined looks; arrowheads or dots on either end; dashed and dotted lines;
+  a draggable bend handle for curved arrows; draggable end points.
+- Watermark tool (W): single, diagonal or tiled text with size, opacity, rotation and colour.
+- Editor layout: Add screenshot, canvas lock, zoom, Drag Me, share, pin, undo and redo buttons.
+
+### Fixed
+- Curved tapered arrows now taper from a thin tail to a thick head.
+
 ## [0.1.0] - 2026-10-14
 
 First public release.
