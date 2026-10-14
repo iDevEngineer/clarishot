@@ -21,11 +21,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Settings"
-        window.setContentSize(CGSize(width: 810, height: 760))
+        // Tall like the reference (~950 pt), but never taller than the screen allows.
+        let available = (NSScreen.main?.visibleFrame.height ?? 900) - 40
+        window.setContentSize(CGSize(width: 810, height: min(940, available)))
         window.minSize = CGSize(width: 810, height: 480)
         window.maxSize = CGSize(width: 810, height: 4000)
         super.init(window: window)
         window.delegate = self
+        window.useRoundedCorners()
         window.center()
     }
 
@@ -113,7 +116,8 @@ final class SettingsSplitController: NSViewController {
         sidebar.material = .sidebar
         sidebar.blendingMode = .behindWindow
         sidebar.wantsLayer = true
-        sidebar.layer?.cornerRadius = 12
+        sidebar.layer?.cornerRadius = 18 // window radius (26) minus the 8 pt inset, so the curves match
+        sidebar.layer?.cornerCurve = .continuous
         sidebar.layer?.borderWidth = 0.5
         sidebar.layer?.borderColor = NSColor.separatorColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
