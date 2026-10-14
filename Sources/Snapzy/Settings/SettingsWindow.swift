@@ -462,6 +462,7 @@ final class Callback: NSObject {
 
 final class GeneralPane: SettingsPane {
     private let folderLabel = NSTextField(labelWithString: "")
+    private let folderIcon = NSImageView()
 
     override func build() {
         let s = Settings.shared
@@ -490,7 +491,12 @@ final class GeneralPane: SettingsPane {
         ])
 
         updateFolderLabel()
-        let folder = horizontal(folderLabel, button("Choose…") { [weak self] in self?.pickFolder() })
+        folderIcon.translatesAutoresizingMaskIntoConstraints = false
+        folderIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        folderIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        let name = horizontal(folderIcon, folderLabel)
+        name.spacing = 4
+        let folder = horizontal(name, button("Choose…") { [weak self] in self?.pickFolder() })
         section("Export", [row("Export location", folder,
                                note: "Set the default save location used when saving from the Quick Access Overlay, After Capture, and other Save actions across the app.")])
 
@@ -547,7 +553,9 @@ final class GeneralPane: SettingsPane {
 
     private func updateFolderLabel() {
         let url = Settings.shared.exportFolder
-        folderLabel.stringValue = "📁 " + url.lastPathComponent
+        // The folder's real Finder icon (the blue folder, or Desktop's own icon).
+        folderIcon.image = NSWorkspace.shared.icon(forFile: url.path)
+        folderLabel.stringValue = url.lastPathComponent
         folderLabel.textColor = .secondaryLabelColor
         folderLabel.toolTip = url.path
     }
