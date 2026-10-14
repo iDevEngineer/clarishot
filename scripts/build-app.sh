@@ -27,6 +27,12 @@ cp .build/release/ClarishotCLI "$APP/Contents/Helpers/clarishot"
 codesign --force --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/clarishot"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# Version from VERSION; build number = number of commits, so each build is higher than the last.
+VERSION=$(tr -d '[:space:]' < VERSION)
+BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
+
 # WebP encoder: Google's libwebp (BSD licence), copied from Homebrew if installed.
 WEBP_LIB=/opt/homebrew/opt/webp/lib
 if [ -f "$WEBP_LIB/libwebp.7.dylib" ]; then
@@ -65,7 +71,7 @@ fi
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign "$SIGN_IDENTITY" "$APP"
 
-echo "Built $APP"
+echo "Built $APP ($VERSION, build $BUILD)"
 
 # Keep /Applications/Clarishot.app in step with every build (skip with INSTALL=0).
 if [ "${INSTALL:-1}" = "1" ]; then
