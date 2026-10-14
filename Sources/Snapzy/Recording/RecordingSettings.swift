@@ -9,13 +9,18 @@ final class RecordingSettingsViewController: NSViewController {
     private var options: RecordingOptions
     private let onChange: (RecordingOptions) -> Void
     private var targets: [AnyObject] = []
-    private static let width: CGFloat = 360
+    private let width: CGFloat
+    /// Inside the Settings window: no own scrolling or background (the window provides them).
+    private let embedded: Bool
     private static let frameRates = [10, 15, 24, 25, 30, 48, 50, 60]
     private static let gifFrameRates = [5, 10, 15, 20, 25, 30, 40, 50, 60]
     private static let gifWidths = [1200, 960, 800, 640, 500, 480, 320, 256, 200]
 
-    init(options: RecordingOptions, onChange: @escaping (RecordingOptions) -> Void) {
+    init(options: RecordingOptions, width: CGFloat = 360, embedded: Bool = false,
+         onChange: @escaping (RecordingOptions) -> Void) {
         self.options = options
+        self.width = width
+        self.embedded = embedded
         self.onChange = onChange
         super.init(nibName: nil, bundle: nil)
     }
@@ -73,6 +78,13 @@ final class RecordingSettingsViewController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
+        if embedded {
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            stack.widthAnchor.constraint(equalToConstant: width - 40).isActive = true // the sections' width
+            view = stack
+            return
+        }
         // Scroll if it's taller than the screen allows.
         let document = FlippedView()
         document.addSubview(stack)
@@ -81,7 +93,7 @@ final class RecordingSettingsViewController: NSViewController {
             stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor),
-            stack.widthAnchor.constraint(equalToConstant: Self.width)
+            stack.widthAnchor.constraint(equalToConstant: width)
         ])
         let size = stack.fittingSize
         document.frame = CGRect(origin: .zero, size: size)
@@ -107,7 +119,7 @@ final class RecordingSettingsViewController: NSViewController {
         column.alignment = .leading
         column.spacing = 8
         group.translatesAutoresizingMaskIntoConstraints = false
-        group.widthAnchor.constraint(equalToConstant: Self.width - 40).isActive = true
+        group.widthAnchor.constraint(equalToConstant: width - 40).isActive = true
         return column
     }
 
@@ -122,7 +134,7 @@ final class RecordingSettingsViewController: NSViewController {
             let text = NSTextField(wrappingLabelWithString: note)
             text.font = .systemFont(ofSize: 11)
             text.textColor = .secondaryLabelColor
-            text.preferredMaxLayoutWidth = Self.width - 60
+            text.preferredMaxLayoutWidth = width - 60
             views.append(text)
         }
         let stack = NSStackView(views: views)

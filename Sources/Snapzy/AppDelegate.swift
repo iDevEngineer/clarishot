@@ -16,6 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Shortcuts.registerAll()
             }
         }
+        // `open Snapzy.app --args --settings` opens Settings straight away.
+        if let i = CommandLine.arguments.firstIndex(of: "--settings") {
+            let name = CommandLine.arguments.dropFirst(i + 1).first ?? ""
+            SettingsWindowController.show(tab: SettingsTab.allCases.first { $0.title.lowercased().hasPrefix(name.lowercased()) && !name.isEmpty } ?? .general)
+        }
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
         }
