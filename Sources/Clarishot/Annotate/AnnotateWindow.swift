@@ -392,9 +392,11 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
                 self?.applyToSelection()
             }]))
             let look = selected?.arrowLook ?? canvas.arrowType
-            items.append(group("Display", [segmented(["arrowtriangle.right.fill", "arrow.right", "arrowtriangle.right"].map(Self.symbol),
-                                                     selected: look.rawValue, tips: ArrowType.allCases.map(\.title)) { [weak self] i in
-                self?.canvas.arrowType = ArrowType(rawValue: i) ?? .tapered
+            // Same order as the reference: classic, tapered, outlined.
+            let order: [ArrowType] = [.classic, .tapered, .outlined]
+            items.append(group("Display", [segmented(order.map(Self.arrowLookImage), selected: order.firstIndex(of: look) ?? 1,
+                                                     tips: order.map(\.title)) { [weak self] i in
+                self?.canvas.arrowType = order[i]
                 self?.applyToSelection()
                 self?.refreshProperties()
             }]))
@@ -524,6 +526,36 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private static func symbol(_ name: String) -> NSImage {
         NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)) ?? NSImage()
+    }
+
+    /// Classic: an even line with a head. Tapered: a solid wedge from thin to thick. Outlined: the same, hollow.
+    private static func arrowLookImage(_ look: ArrowType) -> NSImage {
+        let image = NSImage(size: CGSize(width: 22, height: 12), flipped: false) { rect in
+            NSColor.black.set()
+            let y = rect.midY
+            switch look {
+            case .classic:
+                let line = NSBezierPath()
+                line.move(to: CGPoint(x: 1, y: y)); line.line(to: CGPoint(x: 15, y: y))
+                line.lineWidth = 1.6
+                line.stroke()
+                let head = NSBezierPath()
+                head.move(to: CGPoint(x: 21, y: y)); head.line(to: CGPoint(x: 14, y: y + 4)); head.line(to: CGPoint(x: 14, y: y - 4))
+                head.close(); head.fill()
+            case .tapered, .outlined:
+                let shape = NSBezierPath()
+                shape.move(to: CGPoint(x: 1, y: y + 0.4))
+                shape.line(to: CGPoint(x: 14, y: y + 1.8)); shape.line(to: CGPoint(x: 14, y: y + 5))
+                shape.line(to: CGPoint(x: 21, y: y))
+                shape.line(to: CGPoint(x: 14, y: y - 5)); shape.line(to: CGPoint(x: 14, y: y - 1.8))
+                shape.line(to: CGPoint(x: 1, y: y - 0.4))
+                shape.close()
+                if look == .tapered { shape.fill() } else { shape.lineWidth = 1.1; shape.lineJoinStyle = .round; shape.stroke() }
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     /// Little pictures of solid / dashed / dotted lines.
