@@ -145,7 +145,7 @@ final class BackgroundSidebarView: NSView {
         var plain: [NSView] = BackgroundFill.plainColors.map { color in
             let spec = "solid:\(color.p3String)"
             return ColorDot(color: color, selected: style.enabled && style.fillSpec == spec) { [weak self] in
-                self?.change { $0.fillSpec = spec; $0.enabled = true }
+                self?.pickFill(spec)
             }
         }
         let current = (style.fillSpec?.hasPrefix("solid:") == true) ? style.fill : nil
@@ -155,7 +155,8 @@ final class BackgroundSidebarView: NSView {
         custom.toolTip = "Custom colour…"
         custom.showsWheel = true
         custom.onChange = { [weak self] color in
-            self?.change { $0.fillSpec = "solid:\(color.p3String)"; $0.enabled = true }
+            // No redraw while the picker is open: it would remove the button the picker hangs from.
+            self?.pickFill("solid:\(color.p3String)", rebuild: false)
         }
         plain.append(custom)
 
@@ -200,7 +201,7 @@ final class BackgroundSidebarView: NSView {
 
     private func tile(_ fill: BackgroundFill, spec: String, tip: String? = nil) -> NSView {
         let tile = FillTile(fill: fill, selected: style.enabled && style.fillSpec == spec) { [weak self] in
-            self?.change { $0.fillSpec = spec; $0.enabled = true }
+            self?.pickFill(spec)
         }
         tile.toolTip = tip
         return tile
@@ -343,6 +344,16 @@ final class BackgroundSidebarView: NSView {
         onChange(style)
         // Rebuild on the next turn so the clicked control finishes handling the click first.
         if rebuildAfter { DispatchQueue.main.async { [weak self] in self?.rebuild() } }
+    }
+
+    /// Chooses a background. With no padding yet the background would be invisible, so the
+    /// first choice gives it some room; every other value stays as you set it.
+    private func pickFill(_ spec: String, rebuild: Bool = true) {
+        change(rebuildAfter: rebuild) {
+            $0.fillSpec = spec
+            $0.enabled = true
+            if $0.padding == 0 { $0.padding = 48 }
+        }
     }
 
     private func apply(_ preset: CanvasBackground) {

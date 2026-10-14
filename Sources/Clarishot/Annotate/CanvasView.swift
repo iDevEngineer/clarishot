@@ -5,7 +5,7 @@ import AppKit
 final class CanvasView: NSView, NSTextFieldDelegate {
     let document: AnnotateDocument
 
-    var tool: Tool = .arrow {
+    var tool: Tool = .select {
         didSet { commitText(); selectedIndex = nil; needsDisplay = true; window?.invalidateCursorRects(for: self) }
     }
     var color: NSColor = OklchPalette.red

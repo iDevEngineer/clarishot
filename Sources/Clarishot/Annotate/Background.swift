@@ -231,9 +231,10 @@ enum Wallpaper {
 struct BackgroundStyle: Codable, Equatable {
     var enabled = false
     var fillIndex = 0
-    var padding: CGFloat = 64      // points
-    var cornerRadius: CGFloat = 12 // points
-    var shadow = true
+    // A new background starts with nothing set: no padding, square corners, no shadow.
+    var padding: CGFloat = 0       // points
+    var cornerRadius: CGFloat = 0  // points
+    var shadow = false
     /// Index into `aspects`: 0 = fit the screenshot, otherwise a fixed shape.
     var aspect = 0
 

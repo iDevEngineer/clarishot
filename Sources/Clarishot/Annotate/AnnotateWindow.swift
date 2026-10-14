@@ -68,7 +68,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         window.commands = self
         buildContent()
         window.useRoundedCorners()
-        selectTool(.arrow)
+        selectTool(.select)
         updateWidthIcon()
         refreshUndo()
     }
