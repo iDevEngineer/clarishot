@@ -560,7 +560,8 @@ final class OverlayView: NSView {
                                              CGPoint(x: mouse.x, y: 0), CGPoint(x: mouse.x, y: bounds.maxY)])
             ctx.setLineDash(phase: 0, lengths: [])
         }
-        if Settings.shared.showMagnifier, !picksWindows, mode != .scrollArea, let mouse, isDrawingOrIdle {
+        // The magnifier belongs to Crosshair Mode, like the reference.
+        if Settings.shared.crosshairLines, Settings.shared.showMagnifier, !picksWindows, mode != .scrollArea, let mouse, isDrawingOrIdle {
             drawMagnifier(at: mouse, ctx)
         }
     }

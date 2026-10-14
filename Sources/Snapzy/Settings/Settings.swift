@@ -128,7 +128,7 @@ final class Settings {
     }
 
     var showMagnifier: Bool {
-        get { bool("showMagnifier", default: false) }
+        get { bool("showMagnifier", default: true) } // only shown in Crosshair Mode
         set { set(newValue, "showMagnifier") }
     }
 

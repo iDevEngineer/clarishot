@@ -761,10 +761,14 @@ final class ScreenshotsPane: SettingsPane {
         resetRow.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         block(resetRow)
 
+        let magnifier = toggle({ s.showMagnifier }, { s.showMagnifier = $0 })
+        magnifier.isEnabled = s.crosshairLines
         section("Crosshair", [
-            row("Crosshair Mode", popup(["Disabled", "Enabled"], selected: s.crosshairLines ? 1 : 0) { s.crosshairLines = $0 == 1 },
-                note: "Shows guide lines across the screen through the cursor while selecting."),
-            row("Show magnifier", toggle({ s.showMagnifier }, { s.showMagnifier = $0 }))
+            row("Crosshair Mode", popup(["Disabled", "Enabled"], selected: s.crosshairLines ? 1 : 0) { on in
+                s.crosshairLines = on == 1
+                magnifier.isEnabled = on == 1
+            }, note: "Shows guide lines across the screen through the cursor while selecting."),
+            row("Show magnifier", magnifier, note: "To enable magnifier, you must enable Crosshair Mode first.")
         ])
     }
 
