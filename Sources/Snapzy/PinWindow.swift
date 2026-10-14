@@ -36,6 +36,9 @@ final class PinWindow: NSPanel {
         isReleasedWhenClosed = false
         level = .floating
         hasShadow = true
+        // Clear window so the rounded corners show (the shadow follows the rounded shape).
+        backgroundColor = .clear
+        isOpaque = false
         isMovableByWindowBackground = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         pinView.onClose = { [weak self] in self?.closePin() }
@@ -136,6 +139,8 @@ private final class PinView: NSView {
         wantsLayer = true
         layer?.contents = image
         layer?.contentsGravity = .resizeAspect
+        layer?.cornerRadius = 12
+        layer?.masksToBounds = true
 
         controls.frame = bounds
         controls.autoresizingMask = [.width, .height]
@@ -268,6 +273,7 @@ private final class ResizeGrip: NSView {
         let width = min(max(startFrame.width + (abs(dx) > abs(dy) ? dx : dy), 80), maxWidth)
         let height = width / aspect
         window.setFrame(CGRect(x: startFrame.minX, y: startFrame.maxY - height, width: width, height: height), display: true)
+        window.invalidateShadow()
     }
 
     override func mouseUp(with event: NSEvent) { startMouse = nil }
