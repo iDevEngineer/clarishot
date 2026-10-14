@@ -152,16 +152,18 @@ final class BackgroundSidebarView: NSView {
         var customColor = NSColor(oklch: 0.65, 0.2, 280)
         if case .solid(let c)? = current { customColor = c }
         let custom = OklchColorButton(color: customColor, size: CGSize(width: 20, height: 20))
-        custom.toolTip = "Any colour (OKLCH)"
+        custom.toolTip = "Custom colour…"
+        custom.showsWheel = true
         custom.onChange = { [weak self] color in
             self?.change { $0.fillSpec = "solid:\(color.p3String)"; $0.enabled = true }
         }
         plain.append(custom)
 
-        let padding = slider(style.padding, 0...200) { s, v in s.padding = v }
-        let inset = slider(style.effectiveInset, 0...60) { s, v in s.inset = v }
-        let shadow = slider(style.effectiveShadow, 0...1) { s, v in s.shadowAmount = v; s.shadow = v > 0 }
-        let corners = slider(style.cornerRadius, 0...40) { s, v in s.cornerRadius = v }
+        let full = innerWidth, half = (innerWidth - 14) / 2
+        let padding = slider(style.padding, 0...200, width: full) { s, v in s.padding = v }
+        let inset = slider(style.effectiveInset, 0...60, width: half) { s, v in s.inset = v }
+        let shadow = slider(style.effectiveShadow, 0...1, width: half) { s, v in s.shadowAmount = v; s.shadow = v > 0 }
+        let corners = slider(style.cornerRadius, 0...40, width: half) { s, v in s.cornerRadius = v }
         let ratio = NSPopUpButton(frame: .zero, pullsDown: false)
         ratio.addItems(withTitles: CanvasBackground.aspects.map(\.title).map { $0 == "Auto" ? "Auto" : $0 })
         ratio.selectItem(at: style.aspect)
@@ -250,10 +252,13 @@ final class BackgroundSidebarView: NSView {
         return row
     }
 
-    private func slider(_ value: CGFloat, _ range: ClosedRange<CGFloat>, set: @escaping (inout CanvasBackground, CGFloat) -> Void) -> NSSlider {
+    private func slider(_ value: CGFloat, _ range: ClosedRange<CGFloat>, width: CGFloat,
+                        set: @escaping (inout CanvasBackground, CGFloat) -> Void) -> NSSlider {
         let slider = NSSlider(value: Double(value), minValue: Double(range.lowerBound), maxValue: Double(range.upperBound),
                               target: nil, action: nil)
         slider.controlSize = .small
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.widthAnchor.constraint(equalToConstant: width).isActive = true
         bind(slider) { [weak self, weak slider] in
             let v = CGFloat(slider?.doubleValue ?? 0)
             self?.change(rebuildAfter: false) { set(&$0, v); $0.enabled = true }
@@ -267,7 +272,7 @@ final class BackgroundSidebarView: NSView {
         let rows = (0..<3).map { row -> NSView in
             let buttons = (0..<3).map { col -> NSView in
                 let index = row * 3 + col
-                return AlignmentDot(selected: index == current) { [weak self] in
+                return AlignmentDot(position: index, selected: index == current) { [weak self] in
                     self?.change { $0.alignment = index; $0.enabled = true }
                 }
             }
@@ -486,10 +491,12 @@ private final class ColorDot: NSView {
 
 /// One of the 3 × 3 alignment buttons: a small framed square, filled when chosen.
 private final class AlignmentDot: NSView {
+    private let position: Int
     private let selected: Bool
     private let onClick: () -> Void
 
-    init(selected: Bool, onClick: @escaping () -> Void) {
+    init(position: Int, selected: Bool, onClick: @escaping () -> Void) {
+        self.position = position
         self.selected = selected
         self.onClick = onClick
         super.init(frame: .zero)
@@ -504,10 +511,16 @@ private final class AlignmentDot: NSView {
         let outer = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
         NSColor.labelColor.withAlphaComponent(selected ? 0.2 : 0.08).setFill()
         outer.fill()
-        let inner = NSBezierPath(roundedRect: bounds.insetBy(dx: 7, dy: 5), xRadius: 2, yRadius: 2)
-        (selected ? NSColor.labelColor : NSColor.secondaryLabelColor).setStroke()
-        inner.lineWidth = selected ? 1.5 : 1
-        inner.stroke()
+        // A small "screenshot" block pushed toward the matching corner or edge.
+        let box = bounds.insetBy(dx: 4, dy: 3)
+        let size = CGSize(width: box.width * 0.5, height: box.height * 0.5)
+        let fx = CGFloat(position % 3) / 2, fy = CGFloat(position / 3) / 2
+        let block = CGRect(x: box.minX + (box.width - size.width) * fx,
+                           y: box.maxY - size.height - (box.height - size.height) * fy,  // row 0 is the top
+                           width: size.width, height: size.height)
+        let inner = NSBezierPath(roundedRect: block, xRadius: 1.5, yRadius: 1.5)
+        (selected ? NSColor.labelColor : NSColor.secondaryLabelColor).setFill()
+        inner.fill()
     }
 
     override func mouseDown(with event: NSEvent) { onClick() }

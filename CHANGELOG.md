@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 - Curved tapered arrows now taper from a thin tail to a thick head.
+- Background sidebar: sliders no longer jump when picking a colour; alignment now places the
+  screenshot flush against the chosen edge or corner, with icons showing each position.
 
 ## [0.1.0] - 2026-10-14
 

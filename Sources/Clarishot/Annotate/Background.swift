@@ -288,9 +288,11 @@ struct BackgroundStyle: Codable, Equatable {
         }
         let a = min(max(alignment ?? 4, 0), 8)
         let fx = CGFloat(a % 3) / 2, fy = CGFloat(a / 3) / 2
-        let extraX = w - framed.width - 2 * padding, extraY = h - framed.height - 2 * padding
+        // Centre keeps padding even on every side. Any other choice pushes the screenshot flush
+        // against that edge or corner, the way a window peeks in from the side.
+        let spareX = w - framed.width, spareY = h - framed.height
         return (CGSize(width: w, height: h),
-                CGPoint(x: padding + extraX * fx + effectiveInset, y: padding + extraY * fy + effectiveInset))
+                CGPoint(x: spareX * fx + effectiveInset, y: spareY * fy + effectiveInset))
     }
 
     func insets(for content: CGSize) -> CGSize {

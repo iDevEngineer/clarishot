@@ -191,6 +191,8 @@ final class OklchColorButton: NSButton {
     var color: NSColor { didSet { needsDisplay = true } }
     /// Called live while the sliders move.
     var onChange: ((NSColor) -> Void)?
+    /// Draw a colour-wheel ring around the swatch, so it reads as "pick any colour".
+    var showsWheel = false { didSet { needsDisplay = true } }
     private var popover: NSPopover?
 
     init(color: NSColor, size: CGSize = CGSize(width: 44, height: 22)) {
@@ -209,6 +211,26 @@ final class OklchColorButton: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func draw(_ dirtyRect: NSRect) {
+        if showsWheel, let ctx = NSGraphicsContext.current?.cgContext {
+            // A hue ring (drawn as thin wedges) with the current colour in the middle.
+            let center = CGPoint(x: bounds.midX, y: bounds.midY)
+            let radius = min(bounds.width, bounds.height) / 2 - 0.5
+            let steps = 72
+            for i in 0..<steps {
+                let a0 = CGFloat(i) / CGFloat(steps) * 2 * .pi, a1 = CGFloat(i + 1) / CGFloat(steps) * 2 * .pi + 0.02
+                ctx.move(to: center)
+                ctx.addArc(center: center, radius: radius, startAngle: a0, endAngle: a1, clockwise: false)
+                ctx.closePath()
+                ctx.setFillColor(NSColor(oklch: 0.72, 0.16, Double(i) / Double(steps) * 360).cgColor)
+                ctx.fillPath()
+            }
+            let inner = bounds.insetBy(dx: bounds.width * 0.25, dy: bounds.height * 0.25)
+            ctx.setFillColor(NSColor.windowBackgroundColor.cgColor)
+            ctx.fillEllipse(in: inner.insetBy(dx: -1, dy: -1))
+            ctx.setFillColor(color.cgColor)
+            ctx.fillEllipse(in: inner)
+            return
+        }
         let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
         color.setFill()
         shape.fill()
