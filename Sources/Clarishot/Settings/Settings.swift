@@ -503,6 +503,20 @@ final class Settings {
         notify()
     }
 
+    // MARK: Setup guide
+
+    /// The first-run guide has been seen (finished or closed).
+    var setupGuideDone: Bool {
+        get { bool("setupGuideDone", default: false) }
+        set { set(newValue, "setupGuideDone") }
+    }
+
+    /// Reopen the guide at the permissions page after "Restart".
+    var setupGuideResume: Bool {
+        get { bool("setupGuideResume", default: false) }
+        set { set(newValue, "setupGuideResume") }
+    }
+
     // MARK: Helpers
 
     private func bool(_ key: String, default value: Bool) -> Bool {

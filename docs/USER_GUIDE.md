@@ -14,11 +14,14 @@ Shortcuts are the defaults; change them in **Preferences → Shortcuts**.
 
 ## Getting started
 
-1. Open Clarishot from `/Applications`.
-2. Press **⌥⇧⌘4** and drag across part of the screen.
-3. macOS asks for **Screen & System Audio Recording** permission. Turn Clarishot on in System Settings,
-   then quit and reopen Clarishot.
-4. Press **⌥⇧⌘4** again. A preview card appears in the bottom-left corner with your screenshot.
+1. Open Clarishot from `/Applications`. The **setup guide** opens.
+2. On **A few permissions**, click **Allow…** next to Screen Recording and turn Clarishot on in System
+   Settings, then click **Restart**. The guide reopens where you left off with a green tick.
+   Accessibility, Microphone and Camera are optional; each row says what it switches on.
+3. Check your shortcuts, choose whether Clarishot opens at login, and click **Start Using Clarishot**.
+4. Press **⌥⇧⌘4** and drag across part of the screen. A preview card appears in the bottom-left corner.
+
+Reopen the guide any time from **Setup Guide…** in the menu-bar menu.
 
 ## Taking screenshots
 

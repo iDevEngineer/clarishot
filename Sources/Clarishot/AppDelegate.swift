@@ -58,7 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.setContentSize(CGSize(width: w, height: window.contentLayoutRect.height))
             }
         }
-        if !CGPreflightScreenCaptureAccess() {
+        let settings = Settings.shared
+        // `--setup-page N` opens the setup guide on page N (0–3), for checking it.
+        if let i = CommandLine.arguments.firstIndex(of: "--setup-page"),
+           let n = CommandLine.arguments.dropFirst(i + 1).first.flatMap(Int.init) {
+            SetupGuideController.show(page: n)
+        } else if !settings.setupGuideDone || settings.setupGuideResume {
+            let resume = settings.setupGuideResume
+            settings.setupGuideResume = false
+            SetupGuideController.show(atPermissions: resume)
+        } else if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
         }
     }
