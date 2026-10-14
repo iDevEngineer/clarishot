@@ -154,6 +154,11 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
 
     override var canBecomeKey: Bool { true }
 
+    override func orderOut(_ sender: Any?) {
+        HintWindow.shared.hide()
+        super.orderOut(sender)
+    }
+
     // MARK: Layout
 
     private func buildContent() {
@@ -190,12 +195,19 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
             button.isOn = options[keyPath: path]
             button.onClick = { [weak self, weak button] in
                 guard let self, let button else { return }
+                // The microphone button picks a device instead of toggling.
+                if path == \RecordingOptions.microphone {
+                    self.showMicrophoneMenu(from: button)
+                    return
+                }
                 button.isOn.toggle()
                 self.options[keyPath: path] = button.isOn
                 self.onOptionsChange?(self.options)
+                self.updateTips()
             }
             return button
         }
+        updateTips()
         let toggleRow = NSStackView(views: toggles)
         toggleRow.distribution = .equalSpacing
 
@@ -338,6 +350,49 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         let paths: [WritableKeyPath<RecordingOptions, Bool>] = [\.microphone, \.systemAudio, \.camera,
                                                                 \.highlightClicks, \.showKeystrokes]
         for (button, path) in zip(toggles, paths) { button.isOn = options[keyPath: path] }
+        updateTips()
+    }
+
+    /// Hover hints that say what each toggle does and whether it is on.
+    private func updateTips() {
+        guard toggles.count == 5 else { return }
+        let micName = Devices.microphones().first { $0.uniqueID == options.microphoneDeviceID }?.localizedName
+            ?? AVCaptureDevice.default(for: .audio)?.localizedName ?? "Default"
+        func state(_ on: Bool) -> String { on ? "On" : "Off" }
+        toggles[0].hint = options.microphone ? "Microphone: \(micName)" : "Microphone: Off (click to choose)"
+        toggles[1].hint = "Computer audio: \(state(options.systemAudio))"
+        toggles[2].hint = "Camera: \(state(options.camera))"
+        toggles[3].hint = "Highlight clicks: \(state(options.highlightClicks))"
+        toggles[4].hint = "Show keystrokes: \(state(options.showKeystrokes))"
+    }
+
+    /// "Do Not Record Microphone", then every microphone on this Mac.
+    private func showMicrophoneMenu(from view: NSView) {
+        HintWindow.shared.hide()
+        let menu = NSMenu()
+        let none = ClosureMenuItem(title: "Do Not Record Microphone") { [weak self] in
+            self?.setMicrophone(on: false, id: nil)
+        }
+        none.state = options.microphone ? .off : .on
+        menu.addItem(none)
+        menu.addItem(.separator())
+        let chosen = options.microphoneDeviceID ?? AVCaptureDevice.default(for: .audio)?.uniqueID
+        for mic in Devices.microphones() {
+            let item = ClosureMenuItem(title: mic.localizedName) { [weak self] in
+                self?.setMicrophone(on: true, id: mic.uniqueID)
+            }
+            item.state = options.microphone && chosen == mic.uniqueID ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: -4), in: view)
+    }
+
+    private func setMicrophone(on: Bool, id: String?) {
+        options.microphone = on
+        if let id { options.microphoneDeviceID = id }
+        toggles.first?.isOn = on
+        onOptionsChange?(options)
+        updateTips()
     }
 
     // MARK: Size fields
@@ -435,7 +490,7 @@ final class PanelIconButton: NSButton {
         isToggle = onSymbol != nil
         super.init(frame: .zero)
         isBordered = false
-        toolTip = tip
+        hint = tip
         imagePosition = .imageOnly
         wantsLayer = true
         layer?.cornerRadius = 7
@@ -451,17 +506,113 @@ final class PanelIconButton: NSButton {
 
     private func update() {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        image = NSImage(systemSymbolName: isOn ? onSymbol : offSymbol, accessibilityDescription: toolTip)?
+        image = NSImage(systemSymbolName: isOn ? onSymbol : offSymbol, accessibilityDescription: hint)?
             .withSymbolConfiguration(config)
         if isToggle {
-            contentTintColor = isOn ? .controlAccentColor : NSColor.white.withAlphaComponent(0.85)
-            layer?.backgroundColor = isOn ? NSColor.white.withAlphaComponent(0.12).cgColor : nil
+            // Like the reference: white icon, a light backing and a small tick underneath when on.
+            contentTintColor = NSColor.white.withAlphaComponent(isOn ? 1 : 0.85)
+            layer?.backgroundColor = isOn ? NSColor.white.withAlphaComponent(0.14).cgColor : nil
+            tick.isHidden = !isOn
         } else {
             contentTintColor = NSColor.white.withAlphaComponent(0.85)
         }
     }
 
-    @objc private func clicked() { onClick?() }
+    @objc private func clicked() {
+        HintWindow.shared.hide()
+        onClick?()
+    }
+
+    /// Text shown on hover. AppKit tooltips don't appear over a non-activating panel, so we draw our own.
+    var hint: String? {
+        didSet { if isHovering, let hint { HintWindow.shared.show(hint, below: self) } }
+    }
+    private var isHovering = false
+
+    private lazy var tick: NSImageView = {
+        let view = NSImageView(image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) ?? NSImage())
+        view.symbolConfiguration = .init(pointSize: 7, weight: .bold)
+        view.contentTintColor = .white
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
+        NSLayoutConstraint.activate([
+            view.centerXAnchor.constraint(equalTo: centerXAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1)
+        ])
+        return view
+    }()
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        if let text = hint ?? toolTip { HintWindow.shared.show(text, below: self) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        HintWindow.shared.hide()
+    }
+}
+
+/// A small dark label that appears under a hovered button after a short delay.
+@MainActor
+final class HintWindow {
+    static let shared = HintWindow()
+    private let panel: NSPanel
+    private let label = NSTextField(labelWithString: "")
+    private var pending: DispatchWorkItem?
+
+    private init() {
+        panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let box = NSView()
+        box.wantsLayer = true
+        box.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.95).cgColor
+        box.layer?.cornerRadius = 6
+        box.layer?.borderWidth = 0.5
+        box.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: box.centerYAnchor)
+        ])
+        panel.contentView = box
+    }
+
+    func show(_ text: String, below view: NSView) {
+        pending?.cancel()
+        let work = DispatchWorkItem { [weak self, weak view] in
+            guard let self, let view, let window = view.window else { return }
+            self.label.stringValue = text
+            let size = CGSize(width: self.label.fittingSize.width + 16, height: 24)
+            let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
+            self.panel.setFrame(CGRect(x: rect.midX - size.width / 2, y: rect.minY - size.height - 6,
+                                       width: size.width, height: size.height), display: true)
+            self.panel.orderFrontRegardless()
+        }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    func hide() {
+        pending?.cancel()
+        panel.orderOut(nil)
+    }
 }
 
 /// Number field for the width/height boxes.
