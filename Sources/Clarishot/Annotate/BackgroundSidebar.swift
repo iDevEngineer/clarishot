@@ -346,11 +346,13 @@ final class BackgroundSidebarView: NSView {
         if rebuildAfter { DispatchQueue.main.async { [weak self] in self?.rebuild() } }
     }
 
-    /// Chooses a background; padding and the other values stay as you set them.
+    /// Chooses a background. With no padding yet the background would be invisible, so the
+    /// first choice gives it some room; every other value stays as you set it.
     private func pickFill(_ spec: String, rebuild: Bool = true) {
         change(rebuildAfter: rebuild) {
             $0.fillSpec = spec
             $0.enabled = true
+            if $0.padding == 0 { $0.padding = 48 }
         }
     }
 
