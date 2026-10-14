@@ -1031,13 +1031,30 @@ final class ColorPaletteViewController: NSViewController {
         picker.onClick = { [weak self] in self?.pickFromScreen() }
         let more = ToolButton(symbol: "paintpalette", tip: "More colours…")
         more.onClick = { [weak self] in self?.openColorPanel() }
-        let tools = NSStackView(views: [picker, more, NSView()])
+        let oklchButton = ToolButton(symbol: "slider.horizontal.3", tip: "OKLCH: pick by lightness, chroma and hue")
+        oklchButton.onClick = { [weak self] in self?.toggleOklch() }
+        let tools = NSStackView(views: [picker, more, oklchButton, NSView()])
         let stack = NSStackView(views: saved.isEmpty ? [standard, tools] : [standard, recent, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        oklch.isHidden = true
+        oklch.onChange = { [weak self] color in self?.onPick(color, false) }
+        oklch.onUse = { [weak self] color in
+            Self.remember(color)
+            self?.onPick(color, true)
+        }
+        stack.addArrangedSubview(oklch)
         view = stack
+    }
+
+    private let oklch = OklchPickerView()
+
+    private func toggleOklch() {
+        oklch.isHidden.toggle()
+        view.layoutSubtreeIfNeeded()
+        preferredContentSize = view.fittingSize
     }
 
     private func row(_ colors: [NSColor]) -> NSStackView {
@@ -1099,12 +1116,18 @@ final class ColorPaletteViewController: NSViewController {
         UserDefaults.standard.set(Array(list.prefix(8)), forKey: savedKey)
     }
 
+    /// Saved as Display P3 ("P3 r g b") so wide-gamut colours aren't dulled to sRGB.
     private static func hex(_ color: NSColor) -> String? {
-        guard let c = color.usingColorSpace(.sRGB) else { return nil }
-        return String(format: "%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+        guard let c = color.usingColorSpace(.displayP3) else { return nil }
+        return String(format: "P3 %.4f %.4f %.4f", c.redComponent, c.greenComponent, c.blueComponent)
     }
 
     private static func color(hex: String) -> NSColor? {
+        if hex.hasPrefix("P3 ") {
+            let parts = hex.dropFirst(3).split(separator: " ").compactMap { Double($0) }
+            guard parts.count == 3 else { return nil }
+            return NSColor(displayP3Red: parts[0], green: parts[1], blue: parts[2], alpha: 1)
+        }
         guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
         return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
                        blue: CGFloat(value & 0xFF) / 255, alpha: 1)
