@@ -10,6 +10,7 @@ final class RecordingSettingsViewController: NSViewController {
     private let onChange: (RecordingOptions) -> Void
     private var targets: [AnyObject] = []
     private static let width: CGFloat = 360
+    private static let frameRates = [10, 15, 24, 25, 30, 48, 50, 60]
 
     init(options: RecordingOptions, onChange: @escaping (RecordingOptions) -> Void) {
         self.options = options
@@ -43,7 +44,7 @@ final class RecordingSettingsViewController: NSViewController {
                     note: "Needs Accessibility permission to see keys typed in other apps.")
             ]),
             section("Video", [
-                row("Frame rate", control: popup(["60 fps", "30 fps", "24 fps"], values: [60, 30, 24], \.fps)),
+                row("Frame rate", control: popup(Self.frameRates.map { "\($0) fps" }, values: Self.frameRates, \.fps)),
                 row("Max resolution", control: popup(RecordingOptions.maxHeights.map(\.title),
                                                      values: Array(RecordingOptions.maxHeights.indices), \.maxResolution),
                     note: "Set a maximum resolution to reduce file size and upload time."),

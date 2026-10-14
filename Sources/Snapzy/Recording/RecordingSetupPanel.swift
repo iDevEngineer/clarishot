@@ -37,7 +37,7 @@ struct RecordingOptions {
     var gifQuality = 0.75        // 0 (smallest file) … 1 (best colours)
 
     static let maxHeights: [(title: String, height: Int?)] = [
-        ("Original", nil), ("4K (2160p)", 2160), ("1440p", 1440), ("1080p", 1080), ("720p", 720)
+        ("Original", nil), ("4K", 2160), ("1440p", 1440), ("1080p", 1080), ("720p", 720), ("480p", 480)
     ]
 
     static let clickColors: [(name: String, color: NSColor)] = [
