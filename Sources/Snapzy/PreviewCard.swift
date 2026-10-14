@@ -138,8 +138,10 @@ final class PreviewPanel: NSPanel {
 final class PreviewCardView: NSView, NSDraggingSource {
     var onDismiss: (() -> Void)?
 
-    private static let maxSize = CGSize(width: 220, height: 240)
+    private static let maxSize = CGSize(width: 240, height: 280)
     private static let minSide: CGFloat = 110
+    /// Wide captures still get a reasonably tall card (the image is cropped to fill it).
+    private static let minHeight: CGFloat = 170
     private static let radius: CGFloat = 12
     private let capture: Capture
     private let thumbRect: CGRect
@@ -153,7 +155,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
         let size = capture.pointSize
         let fit = min(Self.maxSize.width / max(size.width, 1), Self.maxSize.height / max(size.height, 1))
         let width = min(max((size.width * fit).rounded(), Self.minSide), Self.maxSize.width)
-        let height = min(max((size.height * fit).rounded(), Self.minSide), Self.maxSize.height)
+        let height = min(max((size.height * fit).rounded(), Self.minHeight), Self.maxSize.height)
         thumbRect = CGRect(x: 0, y: 0, width: width, height: height)
         super.init(frame: thumbRect)
         setUp()
