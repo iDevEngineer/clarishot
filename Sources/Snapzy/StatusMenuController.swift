@@ -17,8 +17,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     override init() {
         super.init()
-        let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Snapzy")
-        image?.isTemplate = true
+        let image: NSImage? = AppIcon.menuBar()
         statusItem.button?.image = image
         let menu = buildMenu()
         self.menu = menu
@@ -157,8 +156,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         button.title = ""
         button.contentTintColor = nil
         button.action = nil
-        let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Snapzy")
-        image?.isTemplate = true
+        let image: NSImage? = AppIcon.menuBar()
         button.image = image
         statusItem.menu = menu
     }
