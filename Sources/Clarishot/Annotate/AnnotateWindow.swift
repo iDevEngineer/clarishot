@@ -137,8 +137,13 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         done.bezelStyle = .rounded
         done.bezelColor = .controlAccentColor
         done.keyEquivalent = "\r"
-        let finish = NSStackView(views: [saveAs, done])
+        // Undo / redo (⌘Z / ⇧⌘Z), next to Save as… like the reference.
+        undoButton.onClick = { [weak self] in self?.undo() }
+        redoButton.onClick = { [weak self] in self?.redo() }
+        let history = Self.capsule([undoButton, redoButton])
+        let finish = NSStackView(views: [history, saveAs, done])
         finish.spacing = 8
+        finish.setCustomSpacing(12, after: history)
 
         for view in [leftGroup, toolsCapsule, styleGroup, finish] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
