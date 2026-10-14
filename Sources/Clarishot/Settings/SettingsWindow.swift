@@ -124,7 +124,7 @@ final class SettingsSplitController: NSViewController {
 
         let top = NSStackView()
         top.orientation = .vertical
-        top.spacing = 6
+        top.spacing = 10
         top.alignment = .leading
         for tab in SettingsTab.allCases where tab != .about { top.addArrangedSubview(button(for: tab)) }
         let about = button(for: .about)
@@ -219,7 +219,7 @@ final class SidebarButton: NSView {
             icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(equalToConstant: 34)
+            heightAnchor.constraint(equalToConstant: 36)
         ])
     }
 
