@@ -816,15 +816,9 @@ final class AllInOneBar: NSView, NSTextFieldDelegate {
 
     private func showAspectMenu(from view: NSView) {
         let menu = NSMenu()
-        let ratios: [(String, CGFloat?)] = [("Freeform", nil), ("1:1 Square", 1), ("4:3", 4.0 / 3), ("3:2", 1.5),
-                                           ("16:9", 16.0 / 9), ("9:16 Portrait", 9.0 / 16)]
-        for (title, ratio) in ratios {
-            let item = ClosureMenuItem(title: title) { [weak self] in
-                self?.currentRatio = ratio
-                self?.onAspect?(ratio)
-            }
-            item.state = (ratio == nil ? !locked : (locked && currentRatio == ratio)) ? .on : .off
-            menu.addItem(item)
+        AspectRatios.addItems(to: menu, current: locked ? currentRatio : nil) { [weak self] ratio in
+            self?.currentRatio = ratio
+            self?.onAspect?(ratio)
         }
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: view.bounds.maxY + 4), in: view)
     }
@@ -1153,4 +1147,30 @@ enum CrosshairCursor {
         }
         return NSCursor(image: image, hotSpot: CGPoint(x: size / 2, y: size / 2))
     }()
+}
+
+/// The aspect-ratio choices shared by the All-In-One bar and the recording panel.
+@MainActor
+enum AspectRatios {
+    /// nil entries are separators.
+    static let groups: [[(String, CGFloat)]] = [
+        [("1 : 1 (Square)", 1), ("5 : 4 (10 : 8)", 5.0 / 4), ("4 : 3", 4.0 / 3), ("7 : 5", 7.0 / 5),
+         ("3 : 2 (6 : 4)", 3.0 / 2), ("16 : 10", 16.0 / 10), ("16 : 9", 16.0 / 9), ("1.85 : 1", 1.85), ("2.35 : 1", 2.35)],
+        [("4 : 5", 4.0 / 5), ("3 : 4", 3.0 / 4), ("2 : 3", 2.0 / 3), ("9 : 16", 9.0 / 16)]
+    ]
+
+    /// Adds "Freeform", then each group with separators. `current` nil ticks Freeform.
+    static func addItems(to menu: NSMenu, current: CGFloat?, onPick: @escaping (CGFloat?) -> Void) {
+        let free = ClosureMenuItem(title: "Freeform") { onPick(nil) }
+        free.state = current == nil ? .on : .off
+        menu.addItem(free)
+        for group in groups {
+            menu.addItem(.separator())
+            for (title, ratio) in group {
+                let item = ClosureMenuItem(title: title) { onPick(ratio) }
+                if let current, abs(current - ratio) < 0.001 { item.state = .on }
+                menu.addItem(item)
+            }
+        }
+    }
 }

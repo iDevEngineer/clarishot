@@ -167,8 +167,11 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         times.textColor = .secondaryLabelColor
         let fullscreen = PanelIconButton(symbol: "arrow.up.left.and.arrow.down.right", tip: "Record full screen")
         fullscreen.onClick = { [weak self] in self?.onFullscreen?() }
-        let reselect = PanelIconButton(symbol: "crop", tip: "Select a different area")
-        reselect.onClick = { [weak self] in self?.onReselect?() }
+        let reselect = PanelIconButton(symbol: "crop", tip: "Aspect ratio")
+        reselect.onClick = { [weak self, weak reselect] in
+            guard let self, let reselect else { return }
+            self.showAspectMenu(from: reselect)
+        }
         let sizeBox = NSStackView(views: [widthField, times, heightField, fullscreen])
         sizeBox.spacing = 4
         let sizeRow = NSStackView(views: [settingsButton, verticalDivider(), sizeBox, verticalDivider(), reselect])
@@ -339,7 +342,28 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
 
     // MARK: Size fields
 
+    private var currentRatio: CGFloat?
+
+    /// Ratio list, plus a way to pick a new area. Keeps the width and fits the height.
+    private func showAspectMenu(from view: NSView) {
+        let menu = NSMenu()
+        AspectRatios.addItems(to: menu, current: currentRatio) { [weak self] ratio in
+            guard let self else { return }
+            self.currentRatio = ratio
+            guard let ratio else { return }
+            var width = CGFloat(self.widthField.integerValue)
+            var height = (width / ratio).rounded()
+            let maxHeight = NSScreen.main?.frame.height ?? height
+            if height > maxHeight { height = maxHeight; width = (height * ratio).rounded() }
+            self.onSizeChange?(CGSize(width: width, height: height))
+        }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: "Select a New Area…") { [weak self] in self?.onReselect?() })
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: view.bounds.maxY + 4), in: view)
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) {
+        currentRatio = nil
         let size = CGSize(width: max(CGFloat(widthField.integerValue), 20), height: max(CGFloat(heightField.integerValue), 20))
         onSizeChange?(size)
     }
