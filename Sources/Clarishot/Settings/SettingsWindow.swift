@@ -510,8 +510,6 @@ final class Callback: NSObject {
 // MARK: - Panes
 
 final class GeneralPane: SettingsPane {
-    private let folderLabel = NSTextField(labelWithString: "")
-    private let folderIcon = NSImageView()
 
     override func build() {
         let s = Settings.shared
@@ -562,15 +560,13 @@ final class GeneralPane: SettingsPane {
             row("Shutter sound", shutter)
         ])
 
-        updateFolderLabel()
-        folderIcon.translatesAutoresizingMaskIntoConstraints = false
-        folderIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        folderIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        let name = horizontal(folderIcon, folderLabel)
-        name.spacing = 4
-        let folder = horizontal(name, button("Choose…") { [weak self] in self?.pickFolder() })
-        section("Export", [row("Export location", folder,
-                               note: "Set the default save location used when saving from the Quick Access Overlay, After Capture, and other Save actions across the app.")])
+        // Like the reference's Storage row: folder icon, the folder's name underneath, Choose….
+        let folder = s.exportFolder
+        let choose = button("Choose…") { [weak self] in self?.pickFolder() }
+        choose.controlSize = .regular
+        let save = iconRow("folder.fill", "Save location", note: folder.lastPathComponent, choose)
+        save.toolTip = folder.path
+        section("Storage", [save])
 
         // After Capture: Screenshot and Recording columns, like the reference.
         let header = row("Action", nil)
@@ -623,19 +619,10 @@ final class GeneralPane: SettingsPane {
         ])
     }
 
-    private func updateFolderLabel() {
-        let url = Settings.shared.exportFolder
-        // The folder's real Finder icon (the blue folder, or Desktop's own icon).
-        folderIcon.image = NSWorkspace.shared.icon(forFile: url.path)
-        folderLabel.stringValue = url.lastPathComponent
-        folderLabel.textColor = .secondaryLabelColor
-        folderLabel.toolTip = url.path
-    }
-
     private func pickFolder() {
         guard let url = chooseFolder(start: Settings.shared.exportFolder) else { return }
         Settings.shared.exportFolder = url
-        updateFolderLabel()
+        rebuild()
     }
 }
 
