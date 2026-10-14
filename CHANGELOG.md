@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- Annotate asks to save before closing with unsaved edits.
 - Annotate: copy (⌘C), paste (⌘V) and duplicate (⌘D) shapes.
 - Annotate: re-editable `.clarishot` project files (⌥⌘S), opened from Open… or Finder.
 - Capture Menu or Popover (⌥⇧⌘M): captures an open menu, submenus or menu-bar popover.

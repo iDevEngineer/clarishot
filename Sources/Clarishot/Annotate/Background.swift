@@ -262,7 +262,7 @@ struct BackgroundStyle: Codable, Equatable {
 
     var fill: BackgroundFill {
         if let spec = fillSpec {
-            let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
+            let parts = spec.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
             switch parts.first {
             case "gradient":
                 let i = Int(parts.last ?? "") ?? 0

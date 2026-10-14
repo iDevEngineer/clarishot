@@ -85,7 +85,14 @@ struct AnnotateProject: Codable {
         style.inset = style.inset.map { min(max($0, 0), 200) }
         style.shadowAmount = style.shadowAmount.map { min(max($0, 0), 1) }
         style.alignment = style.alignment.map { min(max($0, 0), 8) }
-        if let spec = style.fillSpec, spec.hasPrefix("picture:") {
+        // Only known background kinds with strict formats; anything else is dropped.
+        if let spec = style.fillSpec,
+           spec.range(of: #"^(gradient:\d{1,3}|mesh:\d{1,3}|blur:\d|wallpaper|solid:P3 [0-9.]+ [0-9.]+ [0-9.]+|picture:embedded)$"#,
+                      options: .regularExpression) == nil {
+            style.fillSpec = nil
+        }
+        // Parse with the same code that draws it, so nothing that resolves to a file path slips through.
+        if style.fillSpec != nil, case .picture = style.fill {
             style.fillSpec = nil
             if let data = backgroundPicture, Self.image(data) != nil,
                let folder = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,

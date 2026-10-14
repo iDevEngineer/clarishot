@@ -832,19 +832,25 @@ final class AnnotateDocument {
     var nextCounterNumber: Int { (annotations.filter { $0.tool == .counter }.map(\.number).max() ?? 0) + 1 }
 
     /// Call before every change so it can be undone.
+    /// Goes up with every edit, so the editor can tell whether there are unsaved changes.
+    var revision = 0
+
     func checkpoint() {
+        revision += 1
         undoStack.append(state)
         redoStack.removeAll()
     }
 
     func undo() {
         guard let previous = undoStack.popLast() else { return }
+        revision += 1
         redoStack.append(state)
         restore(previous)
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
+        revision += 1
         undoStack.append(state)
         restore(next)
     }

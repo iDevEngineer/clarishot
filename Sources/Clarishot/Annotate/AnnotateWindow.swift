@@ -46,6 +46,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         guard let result = document.rendered() else { return }
         let callback = onDone
         onDone = nil
+        markSaved()
         window.close()
         let edited = result.from(document.capture.sourceBundleID)
         // Opened from Capture & Annotate: hand back. Otherwise run the usual after-capture actions.
@@ -172,6 +173,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             self.canvas.commitText()
             guard let result = self.document.rendered() else { return }
             PinWindow.pin(result.from(self.document.capture.sourceBundleID))
+            self.markSaved()
             self.window.close()
         }
         let copy = ToolButton(symbol: "doc.on.doc.fill", tip: "Copy (⌘C)")
@@ -366,6 +368,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
                                           backgroundPicture: picture)
             try project.encoded().write(to: url, options: .atomic)
             projectURL = url
+            markSaved()
             Toast.show("Project saved")
         } catch {
             NSAlert(error: error).runModal()
@@ -387,6 +390,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         guard let result = document.rendered() else { return }
         do {
             try result.save(ask: true)
+            markSaved()
             Toast.show("Saved")
         } catch let error as CocoaError where error.code == .userCancelled {
         } catch {
@@ -580,6 +584,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
+            self?.markSaved()
             self?.window.close()
         }
     }
@@ -873,6 +878,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private lazy var backgroundSidebar = BackgroundSidebarView(style: document.background) { [weak self] style in
         guard let self else { return }
         self.document.background = style
+        self.document.revision += 1
         self.canvas.refresh()
     }
     /// Slides the sidebar in (0) or out (-width). It always keeps its full width, so its contents
@@ -943,7 +949,38 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         canvas.commitText()
         guard let result = document.rendered() else { return }
         result.copyToClipboard()
+        markSaved()
         Toast.show("Copied to clipboard")
+    }
+
+    // MARK: Unsaved changes
+
+    /// The edit count when the picture was last saved, copied, pinned or handed back.
+    private var savedRevision = 0
+    private func markSaved() { savedRevision = document.revision }
+
+    /// Asks before closing an editor with edits that haven't gone anywhere yet.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        canvas.commitText()
+        guard document.revision != savedRevision else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save changes to this screenshot?"
+        alert.informativeText = "Your edits will be lost if you close without saving."
+        alert.icon = AppIcon.current
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn: self.saveImage() // saves to your save location, then closes
+            case .alertSecondButtonReturn:
+                self.markSaved()
+                self.window.close()
+            default: break
+            }
+        }
+        return false
     }
 
     @objc func saveImage() {
@@ -952,6 +989,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         do {
             try result.save()
             Toast.show(Capture.savedMessage)
+            markSaved()
             window.close()
         } catch let error as CocoaError where error.code == .userCancelled {
         } catch {
@@ -986,7 +1024,7 @@ final class AnnotateWindow: NSWindow {
         case ("c", false) where !editingText: commands?.copy(); return true
         case ("s", false): commands?.saveImage(); return true
         case ("s", true): commands?.saveImageAs(); return true
-        case ("w", false): close(); return true
+        case ("w", false): performClose(nil); return true
         default: return super.performKeyEquivalent(with: event)
         }
     }
