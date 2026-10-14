@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenuController()
         Shortcuts.registerAll()
+        Wallpaper.startWatching()
         // Re-register hotkeys whenever shortcuts change in Settings.
         NotificationCenter.default.addObserver(forName: Settings.didChange, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {

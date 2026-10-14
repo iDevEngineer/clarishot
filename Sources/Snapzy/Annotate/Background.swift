@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 
 /// What fills the space around the screenshot.
 enum BackgroundFill {
@@ -58,10 +59,59 @@ enum BackgroundFill {
     }
 }
 
-/// The wallpaper picture: the custom one from Settings, else the desktop picture.
+/// The wallpaper picture: the custom one from Settings, else what's actually on the desktop.
+///
+/// macOS's "desktop picture URL" is often stale or a default for dynamic and moving
+/// wallpapers, so Snapzy captures the live wallpaper from the screen instead and keeps it
+/// up to date when you switch Spaces or displays change. The file URL is only a fallback.
 @MainActor
 enum Wallpaper {
-    private static var cache: (url: URL, image: CGImage)?
+    private static var fileCache: (url: URL, image: CGImage)?
+    private static var live: [CGDirectDisplayID: CGImage] = [:]
+    private static var observers: [NSObjectProtocol] = []
+
+    /// Starts keeping the live wallpaper up to date. Call once at launch.
+    static func startWatching() {
+        guard observers.isEmpty else { return }
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { refreshSoon() }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { refreshSoon() }
+        })
+        Task { await refresh() }
+    }
+
+    /// Waits for the Space switch animation to finish, then captures the wallpaper again.
+    private static func refreshSoon() {
+        Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            await refresh()
+        }
+    }
+
+    /// Captures the wallpaper (only the desktop picture, no windows or icons) on every display.
+    static func refresh() async {
+        guard Settings.shared.customWallpaper == nil,
+              let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        else { return }
+        let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+        let pictures = content.windows.filter { $0.windowLayer < iconLevel }
+        for screen in NSScreen.screens {
+            let id = ScreenCapturer.displayID(for: screen)
+            guard let display = content.displays.first(where: { $0.displayID == id }), !pictures.isEmpty else { continue }
+            let filter = SCContentFilter(display: display, including: pictures)
+            let config = SCStreamConfiguration()
+            config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
+            config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
+            config.showsCursor = false
+            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) {
+                live[id] = image
+            }
+        }
+    }
 
     static func url(for screen: NSScreen? = NSScreen.main) -> URL? {
         if let custom = Settings.shared.customWallpaper { return custom }
@@ -69,16 +119,21 @@ enum Wallpaper {
         return NSWorkspace.shared.desktopImageURL(for: screen)
     }
 
-    static var image: CGImage? {
-        guard let url = url() else { return nil }
-        if let cache, cache.url == url { return cache.image }
+    static func image(for screen: NSScreen? = NSScreen.main) -> CGImage? {
+        if Settings.shared.customWallpaper == nil, let screen, let image = live[ScreenCapturer.displayID(for: screen)] {
+            return image
+        }
+        guard let url = url(for: screen) else { return nil }
+        if let fileCache, fileCache.url == url { return fileCache.image }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                        kCGImageSourceThumbnailMaxPixelSize: 2400] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
-        cache = (url, image)
+        fileCache = (url, image)
         return image
     }
+
+    static var image: CGImage? { image() }
 }
 
 struct BackgroundStyle: Codable, Equatable {

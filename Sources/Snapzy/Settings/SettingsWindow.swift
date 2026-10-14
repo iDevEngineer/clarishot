@@ -310,7 +310,7 @@ final class WallpaperPane: SettingsPane {
 
     private func refresh() {
         let url = Wallpaper.url()
-        preview.image = url.flatMap { NSImage(contentsOf: $0) }
+        preview.image = Wallpaper.image.map { NSImage(cgImage: $0, size: CGSize(width: $0.width, height: $0.height)) }
         label.stringValue = Settings.shared.customWallpaper == nil ? "Desktop picture" : (url?.lastPathComponent ?? "")
     }
 

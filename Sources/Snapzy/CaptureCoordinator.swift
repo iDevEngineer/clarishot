@@ -246,6 +246,7 @@ final class CaptureCoordinator {
         Task {
             do {
                 let (image, scale) = try await ScreenCapturer.captureWindow(id: id)
+                if Settings.shared.windowStyle == .background { await Wallpaper.refresh() }
                 let framed = BackgroundRenderer.frameWindow(image, scale: scale, style: Settings.shared.windowStyle)
                 deliver(Capture(image: framed ?? image, scale: scale).from(SourceApp.owner(of: id)))
             } catch {
