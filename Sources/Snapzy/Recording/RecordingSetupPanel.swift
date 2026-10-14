@@ -20,9 +20,10 @@ struct RecordingOptions {
     var microphoneDeviceID: String?
     var dimScreen = false
     var rememberSelection = false
-    var clickColor = 0           // index into clickColors
-    var clickSize = 1            // 0 small, 1 medium, 2 large
-    var clickFilled = true
+    var clickColor = 0           // index into clickColors (0 = system accent colour)
+    var clickScale = 0.5         // 0 … 1, see clickDiameter
+    var clickFilled = false      // false = outline
+    var clickAnimate = true
     var keystrokesAtTop = false
     var keystrokeSize = 1        // 0 small, 1 medium, 2 large
     var keystrokesLight = false
@@ -39,10 +40,10 @@ struct RecordingOptions {
     ]
 
     static let clickColors: [(name: String, color: NSColor)] = [
-        ("Yellow", .systemYellow), ("Red", .systemRed), ("Blue", .systemBlue), ("Green", .systemGreen), ("White", .white)
+        ("System Accent color", .controlAccentColor), ("Yellow", .systemYellow), ("Red", .systemRed), ("Blue", .systemBlue), ("Green", .systemGreen), ("White", .white)
     ]
     var clickNSColor: NSColor { Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color }
-    var clickDiameter: CGFloat { [30, 44, 64][min(max(clickSize, 0), 2)] }
+    var clickDiameter: CGFloat { 24 + CGFloat(min(max(clickScale, 0), 1)) * 56 }
     var keystrokeFontSize: CGFloat { [18, 26, 36][min(max(keystrokeSize, 0), 2)] }
 
     var cameraDiameter: CGFloat { [120, 180, 260][min(max(cameraSize, 0), 2)] }
@@ -70,8 +71,9 @@ struct RecordingOptions {
         o.dimScreen = d["dimScreen"] as? Bool ?? o.dimScreen
         o.rememberSelection = d["rememberSelection"] as? Bool ?? o.rememberSelection
         o.clickColor = d["clickColor"] as? Int ?? o.clickColor
-        o.clickSize = d["clickSize"] as? Int ?? o.clickSize
+        o.clickScale = d["clickScale"] as? Double ?? o.clickScale
         o.clickFilled = d["clickFilled"] as? Bool ?? o.clickFilled
+        o.clickAnimate = d["clickAnimate"] as? Bool ?? o.clickAnimate
         o.keystrokesAtTop = d["keystrokesAtTop"] as? Bool ?? o.keystrokesAtTop
         o.keystrokeSize = d["keystrokeSize"] as? Int ?? o.keystrokeSize
         o.keystrokesLight = d["keystrokesLight"] as? Bool ?? o.keystrokesLight
@@ -93,7 +95,7 @@ struct RecordingOptions {
             "hideDesktopIcons": hideDesktopIcons, "cameraSize": cameraSize,
             "cameraRounded": cameraRounded, "cameraMirrored": cameraMirrored,
             "dimScreen": dimScreen, "rememberSelection": rememberSelection, "clickColor": clickColor,
-            "clickSize": clickSize, "clickFilled": clickFilled, "keystrokesAtTop": keystrokesAtTop,
+            "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate, "keystrokesAtTop": keystrokesAtTop,
             "keystrokeSize": keystrokeSize, "keystrokesLight": keystrokesLight,
             "keystrokesCommandOnly": keystrokesCommandOnly, "maxResolution": maxResolution,
             "audioMono": audioMono, "gifFPS": gifFPS, "gifMaxWidth": gifMaxWidth,

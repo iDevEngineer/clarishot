@@ -393,7 +393,14 @@ final class ClickHighlightWindow: NSWindow {
 
     private func ripple(at global: CGPoint) {
         guard frame.contains(global), let layer = contentView?.layer else { return }
-        let point = CGPoint(x: global.x - frame.minX, y: global.y - frame.minY)
+        ClickRipple.add(to: layer, at: CGPoint(x: global.x - frame.minX, y: global.y - frame.minY), options: options)
+    }
+}
+
+/// The ring drawn where you click; shared by recordings and the options preview.
+@MainActor
+enum ClickRipple {
+    static func add(to layer: CALayer, at point: CGPoint, options: RecordingOptions) {
         let size = options.clickDiameter
         let ring = CAShapeLayer()
         ring.frame = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
@@ -404,19 +411,24 @@ final class ClickHighlightWindow: NSWindow {
         ring.lineWidth = 3
         layer.addSublayer(ring)
 
-        let scale = CABasicAnimation(keyPath: "transform.scale")
-        scale.fromValue = 0.4
-        scale.toValue = 1.3
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1
         fade.toValue = 0
         let group = CAAnimationGroup()
-        group.animations = [scale, fade]
-        group.duration = 0.5
+        if options.clickAnimate {
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.4
+            scale.toValue = 1.3
+            group.animations = [scale, fade]
+        } else {
+            fade.beginTime = 0.3 // hold still, then fade
+            group.animations = [fade]
+        }
+        group.duration = options.clickAnimate ? 0.5 : 0.6
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
         ring.opacity = 0
         ring.add(group, forKey: "ripple")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ring.removeFromSuperlayer() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { ring.removeFromSuperlayer() }
     }
 }
 

@@ -34,7 +34,8 @@ final class RecordingSettingsViewController: NSViewController {
             ]),
             section("Cursor", [
                 row("Show cursor", control: optionToggle(\.showCursor)),
-                row("Highlight clicks", control: withOptions(clickMenu, optionToggle(\.highlightClicks)))
+                row("Highlight clicks", control: withOptionsPanel({ [unowned self] in self.showClickOptions(from: $0) },
+                                                                  optionToggle(\.highlightClicks)))
             ]),
             section("Keystrokes", [
                 row("Show keystrokes", control: withOptions(keystrokeMenu, optionToggle(\.showKeystrokes)),
@@ -71,7 +72,7 @@ final class RecordingSettingsViewController: NSViewController {
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 18
+        stack.spacing = 20
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -88,7 +89,7 @@ final class RecordingSettingsViewController: NSViewController {
         let size = stack.fittingSize
         document.frame = CGRect(origin: .zero, size: size)
         let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: size.width,
-                                                height: min(size.height, (NSScreen.main?.visibleFrame.height ?? 900) - 120)))
+                                                height: min(size.height, ((NSScreen.main?.visibleFrame.height ?? 900) - 120) * 2 / 3)))
         scroll.documentView = document
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
@@ -104,17 +105,13 @@ final class RecordingSettingsViewController: NSViewController {
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         var items: [NSView] = []
         for (index, row) in rows.enumerated() {
-            if index > 0 {
-                let line = NSBox()
-                line.boxType = .separator
-                items.append(line)
-            }
+            if index > 0 { items.append(Self.hairline()) }
             items.append(row)
         }
         let group = NSStackView(views: items)
         group.orientation = .vertical
         group.spacing = 0
-        group.edgeInsets = NSEdgeInsets(top: 2, left: 12, bottom: 2, right: 12)
+        group.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         group.wantsLayer = true
         group.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
         group.layer?.cornerRadius = 10
@@ -148,11 +145,22 @@ final class RecordingSettingsViewController: NSViewController {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        stack.spacing = 3
+        stack.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
         return stack
+    }
+
+    /// A 1-point divider between rows (NSBox separators added uneven extra height).
+    static func hairline() -> NSView {
+        let line = NSView()
+        line.wantsLayer = true
+        line.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        line.translatesAutoresizingMaskIntoConstraints = false
+        line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return line
     }
 
     private func toggle(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSSwitch {
@@ -219,6 +227,20 @@ final class RecordingSettingsViewController: NSViewController {
         return popup(["System Default"] + devices.map(\.localizedName), values: ids, path)
     }
 
+    /// An "Options…" button that runs `open`, next to a switch.
+    private func withOptionsPanel(_ open: @escaping (NSView) -> Void, _ control: NSView) -> NSView {
+        let button = NSButton(title: "Options…", target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        let target = Callback { sender in if let view = sender as? NSView { open(view) } }
+        targets.append(target)
+        button.target = target
+        button.action = #selector(Callback.fire(_:))
+        let stack = NSStackView(views: [button, control])
+        stack.spacing = 10
+        return stack
+    }
+
     /// An "Options…" button that opens `menu`, next to a switch.
     private func withOptions(_ menu: @escaping () -> NSMenu, _ control: NSView) -> NSView {
         let button = NSButton(title: "Options…", target: nil, action: nil)
@@ -254,22 +276,21 @@ final class RecordingSettingsViewController: NSViewController {
         return item
     }
 
-    private func clickMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.addItem(header("Colour"))
-        for (index, entry) in RecordingOptions.clickColors.enumerated() {
-            menu.addItem(choice(entry.name, on: options.clickColor == index) { $0.clickColor = index })
+    private var clickPopover: NSPopover?
+
+    private func showClickOptions(from button: NSView) {
+        let controller = ClickOptionsViewController(options: options) { [weak self] new in
+            guard let self else { return }
+            self.options = new
+            self.onChange(new)
         }
-        menu.addItem(.separator())
-        menu.addItem(header("Size"))
-        for (index, name) in ["Small", "Medium", "Large"].enumerated() {
-            menu.addItem(choice(name, on: options.clickSize == index) { $0.clickSize = index })
-        }
-        menu.addItem(.separator())
-        menu.addItem(header("Style"))
-        menu.addItem(choice("Filled", on: options.clickFilled) { $0.clickFilled = true })
-        menu.addItem(choice("Outline", on: !options.clickFilled) { $0.clickFilled = false })
-        return menu
+        let popover = NSPopover()
+        popover.behavior = .semitransient
+        popover.appearance = NSAppearance(named: .darkAqua)
+        popover.contentViewController = controller
+        controller.onDone = { [weak popover] in popover?.close() }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxX)
+        clickPopover = popover
     }
 
     private func keystrokeMenu() -> NSMenu {
@@ -297,4 +318,128 @@ final class RecordingSettingsViewController: NSViewController {
 /// Top-left origin, so a scroll view starts at the top of the content.
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// Highlight-click options: size, colour, style, animation, a live preview and Done.
+@MainActor
+final class ClickOptionsViewController: NSViewController {
+    var onDone: (() -> Void)?
+    private var options: RecordingOptions
+    private let onChange: (RecordingOptions) -> Void
+    private var targets: [AnyObject] = []
+    private static let width: CGFloat = 380
+
+    init(options: RecordingOptions, onChange: @escaping (RecordingOptions) -> Void) {
+        self.options = options
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func loadView() {
+        let size = NSSlider(value: options.clickScale, minValue: 0, maxValue: 1, target: nil, action: nil)
+        size.numberOfTickMarks = 3
+        size.translatesAutoresizingMaskIntoConstraints = false
+        size.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        bind(size) { [unowned self] in self.options.clickScale = ($0 as? NSSlider)?.doubleValue ?? 0.5 }
+
+        let color = NSPopUpButton(frame: .zero, pullsDown: false)
+        color.addItems(withTitles: RecordingOptions.clickColors.map(\.name))
+        color.selectItem(at: options.clickColor)
+        bind(color) { [unowned self] in self.options.clickColor = ($0 as? NSPopUpButton)?.indexOfSelectedItem ?? 0 }
+
+        let style = NSPopUpButton(frame: .zero, pullsDown: false)
+        style.addItems(withTitles: ["Outline", "Filled"])
+        style.selectItem(at: options.clickFilled ? 1 : 0)
+        bind(style) { [unowned self] in self.options.clickFilled = ($0 as? NSPopUpButton)?.indexOfSelectedItem == 1 }
+
+        let animate = NSSwitch()
+        animate.state = options.clickAnimate ? .on : .off
+        bind(animate) { [unowned self] in self.options.clickAnimate = ($0 as? NSSwitch)?.state == .on }
+
+        var rows: [NSView] = []
+        for (index, (title, control)) in [("Size", size as NSView), ("Color", color), ("Style", style),
+                                          ("Animate clicks", animate)].enumerated() {
+            if index > 0 { rows.append(RecordingSettingsViewController.hairline()) }
+            let label = NSTextField(labelWithString: title)
+            let row = NSStackView(views: [label, NSView(), control])
+            row.alignment = .centerY
+            row.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
+            rows.append(row)
+        }
+        let group = NSStackView(views: rows)
+        group.orientation = .vertical
+        group.spacing = 0
+        group.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        group.wantsLayer = true
+        group.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        group.layer?.cornerRadius = 10
+        for row in rows {
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.widthAnchor.constraint(equalTo: group.widthAnchor, constant: -24).isActive = true
+        }
+
+        let preview = ClickPreviewView { [unowned self] in self.options }
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        preview.heightAnchor.constraint(equalToConstant: 150).isActive = true
+
+        let done = NSButton(title: "Done", target: self, action: #selector(done))
+        done.bezelStyle = .rounded
+        done.keyEquivalent = "\r"
+        let footer = NSStackView(views: [NSView(), done])
+
+        let stack = NSStackView(views: [group, preview, RecordingSettingsViewController.hairline(), footer])
+        stack.orientation = .vertical
+        stack.spacing = 14
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 12, right: 14)
+        for v in [group, preview, footer] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            v.widthAnchor.constraint(equalToConstant: Self.width - 28).isActive = true
+        }
+        view = stack
+    }
+
+    private func bind(_ control: NSControl, _ change: @escaping (Any?) -> Void) {
+        let target = Callback { [unowned self] sender in
+            change(sender)
+            self.onChange(self.options)
+        }
+        targets.append(target)
+        control.target = target
+        control.action = #selector(Callback.fire(_:))
+    }
+
+    @objc private func done() { onDone?() }
+}
+
+/// "Click here to preview": shows the click ring with the current options.
+@MainActor
+private final class ClickPreviewView: NSView {
+    private let options: () -> RecordingOptions
+
+    init(options: @escaping () -> RecordingOptions) {
+        self.options = options
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+        let label = NSTextField(labelWithString: "Click here to preview")
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func mouseDown(with event: NSEvent) {
+        guard let layer else { return }
+        ClickRipple.add(to: layer, at: convert(event.locationInWindow, from: nil), options: options())
+    }
 }
