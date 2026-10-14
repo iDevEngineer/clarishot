@@ -140,6 +140,13 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
     var onFullscreen: (() -> Void)?
     var onReselect: (() -> Void)?
     var onCameraFullScreen: (() -> Void)?
+    private let fullscreenButton = PanelIconButton(symbol: "arrow.up.left.and.arrow.down.right", tip: "Record full screen")
+
+    /// Swaps the full-screen button to "restore" while the area fills the screen.
+    func setFullScreen(_ isFull: Bool) {
+        fullscreenButton.symbol = isFull ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+        fullscreenButton.hint = isFull ? "Restore previous area" : "Record full screen"
+    }
     var onRecord: ((RecordingFormat) -> Void)?
     var onCancel: (() -> Void)?
 
@@ -184,7 +191,7 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         settingsButton.onClick = { [weak self] in self?.showSettingsMenu() }
         let times = NSTextField(labelWithString: "×")
         times.textColor = .secondaryLabelColor
-        let fullscreen = PanelIconButton(symbol: "arrow.up.left.and.arrow.down.right", tip: "Record full screen")
+        let fullscreen = fullscreenButton
         fullscreen.onClick = { [weak self] in self?.onFullscreen?() }
         let reselect = PanelIconButton(symbol: "crop", tip: "Aspect ratio")
         reselect.onClick = { [weak self, weak reselect] in
@@ -552,8 +559,13 @@ enum Devices {
 final class PanelIconButton: NSButton {
     var onClick: (() -> Void)?
     var isOn = false { didSet { update() } }
-    private let offSymbol: String
-    private let onSymbol: String
+    private var offSymbol: String
+    /// Changes a plain (non-toggle) button's icon.
+    var symbol: String {
+        get { offSymbol }
+        set { offSymbol = newValue; if !isToggle { onSymbol = newValue }; update() }
+    }
+    private var onSymbol: String
     private let isToggle: Bool
 
     init(symbol: String, onSymbol: String? = nil, tip: String) {

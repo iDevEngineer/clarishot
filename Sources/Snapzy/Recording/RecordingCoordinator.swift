@@ -112,9 +112,19 @@ final class RecordingCoordinator {
         applyRegion(rect.integral)
     }
 
+    /// The area before the full-screen button was pressed, so a second press restores it.
+    private var areaBeforeFullScreen: CGRect?
+
     private func useFullScreen() {
         guard let region else { return }
-        applyRegion(CGRect(origin: .zero, size: region.screen.frame.size))
+        let full = CGRect(origin: .zero, size: region.screen.frame.size)
+        if region.rect == full, let previous = areaBeforeFullScreen {
+            areaBeforeFullScreen = nil
+            applyRegion(previous)
+        } else {
+            areaBeforeFullScreen = region.rect
+            applyRegion(full)
+        }
     }
 
     private func applyRegion(_ rect: CGRect) {
@@ -123,6 +133,7 @@ final class RecordingCoordinator {
         guard let globalRect else { return }
         outline?.setRegion(globalRect)
         setupPanel?.updateSize(rect.size)
+        setupPanel?.setFullScreen(rect.size == screen.frame.size)
         setupPanel?.place(near: globalRect, on: screen)
         camera?.place(in: globalRect)
     }
