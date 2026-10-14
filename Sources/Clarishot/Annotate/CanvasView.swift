@@ -551,6 +551,50 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     var hasSelection: Bool { selectedIndex != nil }
 
+    // MARK: Copy, paste, duplicate
+
+    /// How far each pasted or duplicated copy is shifted, so it doesn't sit exactly on top.
+    private static let copyOffset = CGVector(dx: 16, dy: 16)
+    private var pasteCount = 0
+
+    /// Copies the selected shape. Returns false when nothing is selected.
+    func copySelection() -> Bool {
+        guard let index = selectedIndex, document.annotations.indices.contains(index) else { return false }
+        commitText()
+        ShapeClipboard.write([document.annotations[index]])
+        pasteCount = 0
+        return true
+    }
+
+    /// Pastes copied shapes. Returns false when the clipboard holds no shapes.
+    func pasteShapes() -> Bool {
+        guard var shapes = ShapeClipboard.read() else { return false }
+        pasteCount += 1
+        let shift = CGVector(dx: Self.copyOffset.dx * CGFloat(pasteCount), dy: Self.copyOffset.dy * CGFloat(pasteCount))
+        for i in shapes.indices { shapes[i].move(by: shift) }
+        insert(shapes)
+        return true
+    }
+
+    func duplicateSelection() {
+        guard let index = selectedIndex, document.annotations.indices.contains(index) else { return }
+        var copy = document.annotations[index]
+        copy.move(by: Self.copyOffset)
+        insert([copy])
+    }
+
+    private func insert(_ shapes: [Annotation]) {
+        commitText()
+        document.checkpoint()
+        for var shape in shapes {
+            if shape.tool == .counter { shape.number = document.nextCounterNumber }
+            document.annotations.append(shape)
+        }
+        changed()
+        selectedIndex = document.annotations.count - 1
+        needsDisplay = true
+    }
+
     func deleteSelection() {
         guard let index = selectedIndex else { return }
         document.checkpoint()

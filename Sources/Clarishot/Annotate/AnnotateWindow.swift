@@ -129,7 +129,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         updateLockIcon()
 
         // Right: Save as… and Done.
-        let saveAs = NSButton(title: "Save as…", target: self, action: #selector(saveImageAs))
+        let saveAs = NSButton(title: "Save as…", target: self, action: #selector(showSaveMenu(_:)))
         saveAs.bezelStyle = .rounded
         let done = NSButton(title: "Done", target: self, action: #selector(doneEditing))
         done.bezelStyle = .rounded
@@ -326,6 +326,59 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         canvas.commitText()
         return try? document.rendered()?.temporaryFile()
     }
+
+    @objc private func showSaveMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        let image = NSMenuItem(title: "Save Image…", action: #selector(saveImageAs), keyEquivalent: "s")
+        image.keyEquivalentModifierMask = [.command, .shift]
+        image.target = self
+        let project = NSMenuItem(title: "Save Editable Project…", action: #selector(saveProject), keyEquivalent: "s")
+        project.keyEquivalentModifierMask = [.command, .option]
+        project.target = self
+        project.toolTip = "Reopen it later in Clarishot with every shape still editable"
+        menu.items = [image, project]
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    /// Where this editor's project was last saved or opened from; saving again writes there.
+    var projectURL: URL?
+
+    /// Saves the picture with every shape, the crop and the background as a .clarishot file.
+    @objc func saveProject() {
+        canvas.commitText()
+        var url = projectURL
+        if url == nil {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.clarishotProject]
+            panel.nameFieldStringValue = (document.capture.fileName as NSString).deletingPathExtension + ".clarishot"
+            panel.directoryURL = Capture.saveDirectory
+            guard panel.runModal() == .OK, let chosen = panel.url else { return }
+            url = chosen
+        }
+        guard let url else { return }
+        do {
+            guard let png = AnnotateProject.png(document.baseImage) else { throw CocoaError(.fileWriteUnknown) }
+            let project = AnnotateProject(scale: document.capture.scale, image: png, crop: document.crop,
+                                          background: document.background,
+                                          annotations: document.annotations.map(\.record),
+                                          sourceBundleID: document.capture.sourceBundleID)
+            try project.encoded().write(to: url, options: .atomic)
+            projectURL = url
+            Toast.show("Project saved")
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    /// ⌘C copies the selected shape, or the whole picture when nothing is selected.
+    func copy() {
+        if canvas.copySelection() { Toast.show("Shape copied"); return }
+        copyImage()
+    }
+
+    func paste() -> Bool { canvas.pasteShapes() }
+
+    func duplicate() { canvas.duplicateSelection() }
 
     @objc func saveImageAs() {
         canvas.commitText()
@@ -836,7 +889,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             sidebarOffset?.constant = open ? 0 : -BackgroundSidebarView.width
             window.contentView?.layoutSubtreeIfNeeded()
         }, completionHandler: { [weak self] in
-            if !open { self?.backgroundSidebar.isHidden = true }
+            MainActor.assumeIsolated { if !open { self?.backgroundSidebar.isHidden = true } }
         })
         backgroundButton.isSelected = open
         Settings.shared.annotateBackgroundWasOpen = open
@@ -921,10 +974,14 @@ final class AnnotateWindow: NSWindow {
         let editingText = firstResponder is NSText
         guard flags.contains(.command) else { return super.performKeyEquivalent(with: event) }
 
+        if flags.contains(.option), key == "s" { commands?.saveProject(); return true }
         switch (key, flags.contains(.shift)) {
         case ("z", false) where !editingText: commands?.undo(); return true
+        case ("v", false) where !editingText: if commands?.paste() == true { return true }
+            return super.performKeyEquivalent(with: event)
+        case ("d", false) where !editingText: commands?.duplicate(); return true
         case ("z", true) where !editingText: commands?.redo(); return true
-        case ("c", false) where !editingText: commands?.copyImage(); return true
+        case ("c", false) where !editingText: commands?.copy(); return true
         case ("s", false): commands?.saveImage(); return true
         case ("s", true): commands?.saveImageAs(); return true
         case ("w", false): close(); return true
@@ -1239,6 +1296,31 @@ final class PropertiesBarView: NSVisualEffectView {
                 stack.addArrangedSubview(line)
             }
             stack.addArrangedSubview(item)
+        }
+    }
+}
+
+
+extension AnnotateWindowController {
+    /// Opens a .clarishot project with every shape editable again.
+    static func openProject(_ url: URL) {
+        do {
+            let project = try AnnotateProject.read(url)
+            guard let image = AnnotateProject.image(project.image) else { throw CocoaError(.fileReadCorruptFile) }
+            open(Capture(image: image, scale: project.scale).from(project.sourceBundleID))
+            guard let controller = openControllers.last else { return }
+            controller.document.annotations = project.annotations.compactMap(Annotation.init(record:))
+            controller.document.crop = project.crop
+            controller.document.background = project.background
+            controller.projectURL = url
+            controller.canvas.refresh()
+            controller.window.title = url.deletingPathExtension().lastPathComponent
+        } catch {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Couldn't open this project"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 }

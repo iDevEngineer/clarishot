@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// clarishot://<action>, e.g. clarishot://capture-area. Only when allowed in Preferences → Advanced.
     func application(_ application: NSApplication, open urls: [URL]) {
+        // Project files double-clicked in Finder.
+        let projects = urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "clarishot" }
+        projects.forEach(AnnotateWindowController.openProject)
+        guard projects.count < urls.count else { return }
         guard Settings.shared.allowURLScheme else {
             Toast.show("Turn on “Allow URL scheme API” in Preferences → Advanced")
             return

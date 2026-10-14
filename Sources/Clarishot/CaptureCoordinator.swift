@@ -298,8 +298,16 @@ final class CaptureCoordinator {
     // MARK: Files
 
     func openImage() {
-        guard let capture = chooseImage() else { return }
-        AnnotateWindowController.open(capture)
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff, .webP, .clarishotProject]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if url.pathExtension.lowercased() == "clarishot" { return AnnotateWindowController.openProject(url) }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
+        let scale: CGFloat = url.deletingPathExtension().lastPathComponent.hasSuffix("@2x") ? 2 : 1
+        AnnotateWindowController.open(Capture(image: image, scale: scale))
     }
 
     func pinImageFromFile() {

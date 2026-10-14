@@ -126,7 +126,12 @@ Open the editor from the preview card's pencil, from **Capture & Annotate**, or 
 | P | Pencil |
 | W | Watermark (single, diagonal or tiled text) |
 
-- **Undo / Redo**: ⌘Z / ⇧⌘Z. **Copy**: ⌘C. **Save**: ⌘S.
+- **Undo / Redo**: ⌘Z / ⇧⌘Z. **Save**: ⌘S.
+- **Copy**: ⌘C copies the selected shape, or the whole picture when nothing is selected.
+  **Paste**: ⌘V pastes copied shapes (into this or another editor window). **Duplicate**: ⌘D.
+- **Editable projects**: **Save as… → Save Editable Project…** (⌥⌘S) saves a `.clarishot` file.
+  Open it later with **Open…** or by double-clicking it in Finder, and every shape, the crop and the
+  background are still editable. Saving again writes to the same file.
 - **Double-click** text to edit it.
 - **Colour**: the colour dot; includes an eyedropper and your recent colours.
 - **Wand menu**: rotate, flip, **Remove Background**, **Hide Sensitive Info**.
