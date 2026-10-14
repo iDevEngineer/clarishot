@@ -405,7 +405,14 @@ final class RecordingCoordinator {
                                   sourceVideoURL: format == .gif ? url : nil)
             capture.sourceBundleID = sourceBundleID
             HistoryStore.shared.add(capture)
-            PreviewManager.shared.show(capture)
+            let settings = Settings.shared
+            if settings.afterRecordingCopy { capture.copyToClipboard() }
+            if settings.afterRecordingSave { _ = try? capture.save() }
+            if settings.afterRecordingShowPreview || !(settings.afterRecordingCopy || settings.afterRecordingSave) {
+                PreviewManager.shared.show(capture)
+            } else {
+                Toast.show(settings.afterRecordingSave ? Capture.savedMessage : "Copied to clipboard")
+            }
         }
     }
 

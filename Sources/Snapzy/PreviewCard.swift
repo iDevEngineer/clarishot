@@ -31,6 +31,7 @@ final class PreviewManager {
         if seconds > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds)) { [weak self, weak panel] in
                 guard let self, let panel, self.panels.contains(where: { $0 === panel }) else { return }
+                if Settings.shared.autoCloseSaves { _ = try? panel.capture.save(to: Capture.saveDirectory) }
                 self.remove(panel)
             }
         }
@@ -140,7 +141,10 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     /// Every card is the same size and shape as the history thumbnails (3:2);
     /// the capture is cropped to fill it.
-    private static let size = CGSize(width: 240, height: 160)
+    static var size: CGSize {
+        let k = CGFloat(Settings.shared.previewScale)
+        return CGSize(width: (240 * k).rounded(), height: (160 * k).rounded())
+    }
     private static let radius: CGFloat = 12
     private let capture: Capture
     private let thumbRect: CGRect
@@ -292,9 +296,10 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     private func save() {
         do {
-            try capture.save()
+            try capture.save(ask: Settings.shared.saveButtonAsks)
             Toast.show(Capture.savedMessage)
             onDismiss?()
+        } catch let error as CocoaError where error.code == .userCancelled {
         } catch {
             NSAlert(error: error).runModal()
         }

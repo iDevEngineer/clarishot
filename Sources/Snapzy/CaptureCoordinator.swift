@@ -31,6 +31,26 @@ final class CaptureCoordinator {
         selectArea { [weak self] capture in self?.deliver(capture) }
     }
 
+    enum AreaAction { case copy, save, annotate, pin }
+
+    /// Capture Area followed by one fixed action instead of the After Capture settings.
+    func captureArea(then action: AreaAction) {
+        selectArea { capture in
+            let capture = capture.finishedForExport()
+            if Settings.shared.playSounds { CaptureSound.play() }
+            HistoryStore.shared.add(capture)
+            switch action {
+            case .copy:
+                capture.copyToClipboard()
+                Toast.show("Copied to clipboard")
+            case .save:
+                if (try? capture.save()) != nil { Toast.show(Capture.savedMessage) }
+            case .annotate: AnnotateWindowController.open(capture)
+            case .pin: PinWindow.pin(capture)
+            }
+        }
+    }
+
     func captureText() {
         selectArea { [weak self] capture in self?.copyText(from: capture) }
     }
@@ -52,7 +72,8 @@ final class CaptureCoordinator {
         Task {
             do {
                 let shots = try await ScreenCapturer.captureAllScreens()
-                present(shots, mode: .allInOne, targets: [], initial: lastAllInOne) { [weak self] result in
+                present(shots, mode: .allInOne, targets: [],
+                        initial: Settings.shared.allInOneRemember ? lastAllInOne : nil) { [weak self] result in
                     guard let self, case let .allInOne(shot, rect, action)? = result else { return }
                     let display = ScreenCapturer.displayID(for: shot.screen)
                     self.lastAllInOne = (display, rect)
@@ -196,6 +217,7 @@ final class CaptureCoordinator {
            let framed = BackgroundRenderer.compose(capture.image, scale: capture.scale, style: style) {
             capture = Capture(image: framed, scale: capture.scale).from(capture.sourceBundleID)
         }
+        capture = capture.finishedForExport()
         if settings.playSounds { CaptureSound.play() }
         HistoryStore.shared.add(capture)
         var acted = false
@@ -207,9 +229,14 @@ final class CaptureCoordinator {
             do {
                 try capture.save()
                 acted = true
+            } catch let error as CocoaError where error.code == .userCancelled {
             } catch {
                 NSAlert(error: error).runModal()
             }
+        }
+        if settings.afterCapturePin {
+            PinWindow.pin(capture)
+            acted = true
         }
         if settings.afterCaptureAnnotate {
             AnnotateWindowController.open(capture)

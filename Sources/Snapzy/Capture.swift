@@ -67,7 +67,7 @@ final class Capture {
         if let videoURL {
             return "\(Self.expand(settings.recordingNameTemplate, date)).\(videoURL.pathExtension)"
         }
-        let suffix = scale > 1 ? "@\(Int(scale))x" : ""
+        let suffix = scale > 1 && settings.retinaSuffix ? "@\(Int(scale))x" : ""
         let ext = settings.imageFormat == .jpeg ? "jpg" : "png"
         return "\(Self.expand(settings.screenshotNameTemplate, date))\(suffix).\(ext)"
     }
@@ -109,20 +109,37 @@ final class Capture {
             pasteboard.writeObjects([videoURL as NSURL])
             return
         }
+        let mode = Settings.shared.clipboardMode
         // Offer PNG as well as TIFF: browsers and Electron apps (Slack, Chrome, VS Code) read PNG.
         let item = NSPasteboardItem()
-        let rep = NSBitmapImageRep(cgImage: image)
-        rep.size = pointSize
-        if let png = rep.representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
-        if let tiff = nsImage.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        if mode != .file {
+            let rep = NSBitmapImageRep(cgImage: image)
+            rep.size = pointSize
+            if let png = rep.representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
+            if let tiff = nsImage.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        }
+        if mode != .image, let file = try? temporaryFile() {
+            item.setString(file.absoluteString, forType: .fileURL)
+        }
         pasteboard.writeObjects([item])
     }
 
+    /// Saves to `directory`, or the export folder. With `ask` (or "Ask for name after every capture")
+    /// a save panel picks the name and place; cancelling throws `CocoaError(.userCancelled)`.
     @discardableResult
-    func save(to directory: URL? = nil) throws -> URL {
+    func save(to directory: URL? = nil, ask: Bool = false) throws -> URL {
         let folder = directory ?? Capture.saveDirectory
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(fileName)
+        var url = folder.appendingPathComponent(fileName)
+        if directory == nil, ask || Settings.shared.askForName {
+            let panel = NSSavePanel()
+            panel.directoryURL = folder
+            panel.nameFieldStringValue = fileName
+            panel.canCreateDirectories = true
+            NSApp.activate(ignoringOtherApps: true)
+            guard panel.runModal() == .OK, let chosen = panel.url else { throw CocoaError(.userCancelled) }
+            url = chosen
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let videoURL {
             if videoURL != url {
                 try? FileManager.default.removeItem(at: url)
@@ -161,7 +178,38 @@ enum CaptureSound {
         byReference: true)
 
     static func play() {
-        sound?.stop()
-        sound?.play()
+        let name = Settings.shared.shutterSound
+        let chosen = name.isEmpty ? sound : NSSound(named: NSSound.Name(name))
+        chosen?.stop()
+        chosen?.play()
+    }
+
+    /// Sounds offered in Settings (from /System/Library/Sounds).
+    static var choices: [String] {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: "/System/Library/Sounds")) ?? []
+        return files.map { ($0 as NSString).deletingPathExtension }.sorted()
+    }
+}
+
+extension Capture {
+    /// Applies "Convert to sRGB" and "Add 1px border" from Settings to a screenshot.
+    @MainActor
+    func finishedForExport() -> Capture {
+        guard !isVideo else { return self }
+        let settings = Settings.shared
+        guard settings.convertToSRGB || settings.addBorder else { return self }
+        let space = settings.convertToSRGB ? CGColorSpace(name: CGColorSpace.sRGB)! : (image.colorSpace ?? CGColorSpaceCreateDeviceRGB())
+        guard let ctx = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return self }
+        let full = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        ctx.draw(image, in: full)
+        if settings.addBorder {
+            let width = max(scale, 1)
+            ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.25).cgColor)
+            ctx.setLineWidth(width)
+            ctx.stroke(full.insetBy(dx: width / 2, dy: width / 2))
+        }
+        guard let output = ctx.makeImage() else { return self }
+        return Capture(image: output, scale: scale).from(sourceBundleID)
     }
 }

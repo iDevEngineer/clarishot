@@ -8,9 +8,15 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     static func open(_ capture: Capture) {
         let controller = AnnotateWindowController(capture: capture)
         openControllers.append(controller)
+        let settings = Settings.shared
+        if settings.annotateShowDockIcon { NSApp.setActivationPolicy(.regular) }
+        if settings.annotateAlwaysOnTop { controller.window.level = .floating }
         NSApp.activate(ignoringOtherApps: true)
         controller.window.makeKeyAndOrderFront(nil)
         controller.window.makeFirstResponder(controller.canvas)
+        if settings.annotateRememberBackground && settings.annotateBackgroundWasOpen {
+            DispatchQueue.main.async { controller.showBackground() }
+        }
     }
 
     private static let colors: [NSColor] = [
@@ -222,11 +228,13 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: imageButton.bounds.maxY + 4), in: imageButton)
     }
 
-    private func showBackground() {
+    fileprivate func showBackground() {
+        Settings.shared.annotateBackgroundWasOpen = true
         let controller = BackgroundViewController(style: document.background) { [weak self] style in
             guard let self else { return }
             self.document.background = style
             self.backgroundButton.isSelected = style.enabled
+            Settings.shared.annotateBackgroundWasOpen = style.enabled
             self.canvas.refresh()
         }
         let popover = NSPopover()
@@ -291,6 +299,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             try result.save()
             Toast.show(Capture.savedMessage)
             window.close()
+        } catch let error as CocoaError where error.code == .userCancelled {
         } catch {
             NSAlert(error: error).runModal()
         }
@@ -298,6 +307,8 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         Self.openControllers.removeAll { $0 === self }
+        // Back to a menu-bar-only app once the last editor closes.
+        if Self.openControllers.isEmpty { NSApp.setActivationPolicy(.accessory) }
     }
 }
 
@@ -448,10 +459,21 @@ final class ColorPaletteViewController: NSViewController {
         let stack = NSStackView(views: colors.map { color in
             let swatch = ColorSwatchButton(color: color, size: 22)
             swatch.onClick = { [weak self] in self?.onPick(color, true) }
+            if Settings.shared.annotateColorNames { swatch.toolTip = Self.name(of: color) }
             return swatch
         })
         stack.spacing = 2
         return stack
+    }
+
+    /// A plain name for a colour, e.g. "Red" or "#3A7BFF" for custom ones.
+    static func name(of color: NSColor) -> String {
+        let named: [(NSColor, String)] = [(.systemRed, "Red"), (.systemOrange, "Orange"), (.systemYellow, "Yellow"),
+                                          (.systemGreen, "Green"), (.systemBlue, "Blue"), (.systemPurple, "Purple"),
+                                          (.black, "Black"), (.white, "White")]
+        if let match = named.first(where: { $0.0 == color }) { return match.1 }
+        guard let c = color.usingColorSpace(.sRGB) else { return "Custom" }
+        return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }
 
     private func pickFromScreen() {

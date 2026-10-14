@@ -75,7 +75,7 @@ enum Wallpaper {
         guard observers.isEmpty else { return }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { refreshSoon() }
+            MainActor.assumeIsolated { if Settings.shared.wallpaperFollowsSpaces { refreshSoon() } }
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
@@ -197,7 +197,7 @@ enum BackgroundRenderer {
     @MainActor
     static func frameWindow(_ image: CGImage, scale: CGFloat, style: Settings.WindowStyle) -> CGImage? {
         guard style != .transparent else { return nil }
-        let pad = Int(((style == .background ? 64 : 40) * scale).rounded())
+        let pad = Int(((style == .background ? CGFloat(Settings.shared.windowPadding) : 40) * scale).rounded())
         let width = image.width + 2 * pad, height = image.height + 2 * pad
         guard let ctx = AnnotationRenderer.makeContext(width: width, height: height, like: image) else { return nil }
         if style == .background {

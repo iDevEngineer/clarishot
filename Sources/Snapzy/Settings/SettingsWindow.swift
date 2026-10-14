@@ -38,7 +38,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
 /// The tabs, in sidebar order, with their tile colour and icon.
 enum SettingsTab: CaseIterable {
-    case general, shortcuts, quickAccess, wallpaper, screenshots, recording, advanced, about
+    case general, shortcuts, quickAccess, wallpaper, screenshots, recording, annotate, advanced, about
 
     var title: String {
         switch self {
@@ -48,6 +48,7 @@ enum SettingsTab: CaseIterable {
         case .wallpaper: return "Wallpaper"
         case .screenshots: return "Screenshots"
         case .recording: return "Screen Recording"
+        case .annotate: return "Annotate"
         case .advanced: return "Advanced"
         case .about: return "About"
         }
@@ -61,6 +62,7 @@ enum SettingsTab: CaseIterable {
         case .wallpaper: return "photo.fill"
         case .screenshots: return "camera.fill"
         case .recording: return "video.fill"
+        case .annotate: return "pencil"
         case .advanced: return "wrench.and.screwdriver.fill"
         case .about: return "info"
         }
@@ -73,6 +75,7 @@ enum SettingsTab: CaseIterable {
         case .wallpaper: return .systemTeal
         case .screenshots: return .systemBlue
         case .recording: return .systemRed
+        case .annotate: return .systemOrange
         case .advanced: return .systemPurple
         case .about: return .systemGray
         }
@@ -87,6 +90,7 @@ enum SettingsTab: CaseIterable {
         case .wallpaper: return WallpaperPane(title: title)
         case .screenshots: return ScreenshotsPane(title: title)
         case .recording: return RecordingPane(title: title)
+        case .annotate: return AnnotatePane(title: title)
         case .advanced: return AdvancedPane(title: title)
         case .about: return AboutPane()
         }
@@ -116,7 +120,7 @@ final class SettingsSplitController: NSViewController {
 
         let top = NSStackView()
         top.orientation = .vertical
-        top.spacing = 2
+        top.spacing = 6
         top.alignment = .leading
         for tab in SettingsTab.allCases where tab != .about { top.addArrangedSubview(button(for: tab)) }
         let about = button(for: .about)
@@ -172,6 +176,8 @@ final class SettingsSplitController: NSViewController {
             next.view.bottomAnchor.constraint(equalTo: content.bottomAnchor)
         ])
         pane = next
+        // Don't start with a text or search field focused.
+        DispatchQueue.main.async { [weak self] in self?.view.window?.makeFirstResponder(nil) }
     }
 }
 
@@ -188,10 +194,10 @@ final class SidebarButton: NSView {
 
         let tile = NSView()
         tile.wantsLayer = true
-        tile.layer?.cornerRadius = 6
+        tile.layer?.cornerRadius = 5
         tile.layer?.backgroundColor = tab.color.cgColor
         let icon = NSImageView(image: NSImage(systemSymbolName: tab.symbol, accessibilityDescription: nil) ?? NSImage())
-        icon.symbolConfiguration = .init(pointSize: 12, weight: .semibold)
+        icon.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
         icon.contentTintColor = .white
         for view in [tile, icon] { view.translatesAutoresizingMaskIntoConstraints = false }
         tile.addSubview(icon)
@@ -199,17 +205,17 @@ final class SidebarButton: NSView {
         let label = NSTextField(labelWithString: tab.title)
         label.font = .systemFont(ofSize: 13)
         let stack = NSStackView(views: [tile, label])
-        stack.spacing = 10
+        stack.spacing = 9
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            tile.widthAnchor.constraint(equalToConstant: 24),
-            tile.heightAnchor.constraint(equalToConstant: 24),
+            tile.widthAnchor.constraint(equalToConstant: 22),
+            tile.heightAnchor.constraint(equalToConstant: 22),
             icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
             icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(equalToConstant: 36)
+            heightAnchor.constraint(equalToConstant: 34)
         ])
     }
 
@@ -241,18 +247,30 @@ class SettingsPane: NSViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// Shown at the right of the title row (e.g. a search field).
+    var headerAccessory: NSView? { nil }
+    private let body = NSStackView()
+
     override func loadView() {
         let heading = NSTextField(labelWithString: paneTitle)
-        heading.font = .systemFont(ofSize: 15, weight: .bold)
-        blocks = [heading]
-        build()
-        let stack = NSStackView(views: blocks)
+        heading.font = .systemFont(ofSize: 15, weight: .semibold)
+        let headerRow = NSStackView(views: [heading, NSView()] + (headerAccessory.map { [$0] } ?? []))
+        headerRow.alignment = .centerY
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+        headerRow.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
+        headerRow.heightAnchor.constraint(equalToConstant: 26).isActive = true
+
+        body.orientation = .vertical
+        body.alignment = .leading
+        body.spacing = 26
+        rebuild()
+
+        let stack = NSStackView(views: [headerRow, body])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 22
-        stack.setCustomSpacing(16, after: heading)
+        stack.spacing = 18
         // The title sits level with the window buttons, like the reference.
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 20, bottom: 24, right: 20)
+        stack.edgeInsets = NSEdgeInsets(top: 9, left: 20, bottom: 24, right: 20)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let document = FlippedView()
@@ -276,16 +294,35 @@ class SettingsPane: NSViewController {
         view = scroll
     }
 
+    /// Clears the sections and runs `build()` again (e.g. after filtering).
+    func rebuild() {
+        body.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        targets.removeAll()
+        blocks = []
+        build()
+        blocks.forEach { body.addArrangedSubview($0) }
+    }
+
     /// Subclasses add sections here.
     func build() {}
 
     /// A titled group of rows, with an optional grey line under the title.
-    func section(_ title: String?, subtitle: String? = nil, _ rows: [NSView]) {
+    func section(_ title: String?, symbol: String? = nil, subtitle: String? = nil, _ rows: [NSView]) {
+        guard !rows.isEmpty else { return }
         var views: [NSView] = []
         if let title {
             let label = NSTextField(labelWithString: title)
-            label.font = .systemFont(ofSize: 13, weight: .bold)
-            views.append(label)
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            if let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+                let icon = NSImageView(image: image)
+                icon.symbolConfiguration = .init(pointSize: 12, weight: .semibold)
+                icon.contentTintColor = .labelColor
+                let header = NSStackView(views: [icon, label])
+                header.spacing = 6
+                views.append(header)
+            } else {
+                views.append(label)
+            }
         }
         if let subtitle {
             let text = NSTextField(wrappingLabelWithString: subtitle)
@@ -300,8 +337,8 @@ class SettingsPane: NSViewController {
         let column = NSStackView(views: views)
         column.orientation = .vertical
         column.alignment = .leading
-        column.spacing = 6
-        column.setCustomSpacing(8, after: views[views.count - 2 < 0 ? 0 : views.count - 2])
+        column.spacing = 3
+        if views.count > 1 { column.setCustomSpacing(9, after: views[views.count - 2]) }
         blocks.append(column)
     }
 
@@ -325,18 +362,22 @@ class SettingsPane: NSViewController {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 3
-        stack.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: note == nil ? 8 : 10, right: 0)
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
-        stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
+        // 21 pt for ordinary rows (37 pt total); taller controls like picture tiles may grow it.
+        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 21).isActive = true
+        let fit = top.heightAnchor.constraint(equalToConstant: 21)
+        fit.priority = .defaultLow
+        fit.isActive = true
+        stack.setHuggingPriority(.required, for: .vertical)
         return stack
     }
 
     func toggle(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSSwitch {
         let control = NSSwitch()
-        control.controlSize = .small
+        control.controlSize = .mini
         control.state = get() ? .on : .off
         control.target = target { sender in set((sender as? NSSwitch)?.state == .on) }
         control.action = #selector(Callback.fire(_:))
@@ -376,13 +417,25 @@ class SettingsPane: NSViewController {
         return field
     }
 
+    func slider(_ value: Double, _ range: ClosedRange<Double>, ticks: Int = 0, width: CGFloat = 160,
+                change: @escaping (Double) -> Void) -> NSSlider {
+        let slider = NSSlider(value: value, minValue: range.lowerBound, maxValue: range.upperBound, target: nil, action: nil)
+        slider.controlSize = .small
+        slider.numberOfTickMarks = ticks
+        slider.target = target { sender in change((sender as? NSSlider)?.doubleValue ?? value) }
+        slider.action = #selector(Callback.fire(_:))
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.widthAnchor.constraint(equalToConstant: width).isActive = true
+        return slider
+    }
+
     func horizontal(_ views: NSView...) -> NSStackView {
         let stack = NSStackView(views: views)
         stack.spacing = 8
         return stack
     }
 
-    private func target(_ handler: @escaping (Any?) -> Void) -> Callback {
+    func target(_ handler: @escaping (Any?) -> Void) -> Callback {
         let callback = Callback(handler)
         targets.append(callback)
         return callback
@@ -412,42 +465,78 @@ final class GeneralPane: SettingsPane {
 
     override func build() {
         let s = Settings.shared
-        section("App", [row("Launch at login", toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 }))])
-        section("Sounds", [row("Play sounds", toggle({ s.playSounds }, { s.playSounds = $0 }))])
+        section("App", [
+            row("Launch at login", toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 })),
+            row("Show menu bar icon", toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }),
+                note: "When hidden, open Snapzy again from Finder to get back to Settings.")
+        ])
+        section("Capture", [
+            row("Hide desktop icons while capturing",
+                toggle({ s.hideDesktopIconsWhileCapturing }, { s.hideDesktopIconsWhileCapturing = $0 }),
+                note: "You can set a custom wallpaper to hide desktop icons in Wallpaper settings.")
+        ])
+        let sounds = CaptureSound.choices
+        section("Sounds", [
+            row("Play sounds", toggle({ s.playSounds }, { s.playSounds = $0 })),
+            row("Shutter sound", popup(["System Default"] + sounds, selected: (sounds.firstIndex(of: s.shutterSound) ?? -1) + 1) {
+                s.shutterSound = $0 == 0 ? "" : sounds[$0 - 1]
+                CaptureSound.play()
+            })
+        ])
 
         updateFolderLabel()
         let folder = horizontal(folderLabel, button("Choose…") { [weak self] in self?.pickFolder() })
         section("Export", [row("Export location", folder,
-                               note: "Where Save puts files from the Quick Access Overlay, After Capture and other Save actions.")])
+                               note: "Set the default save location used when saving from the Quick Access Overlay, After Capture, and other Save actions across the app.")])
 
-        // After Capture: a two-column table like the reference (only screenshots have options so far).
+        // After Capture: Screenshot and Recording columns, like the reference.
         let header = row("Action", nil)
         if let top = (header as? NSStackView)?.arrangedSubviews.first as? NSStackView {
             (top.arrangedSubviews.first as? NSTextField)?.textColor = .secondaryLabelColor
-            let column = NSTextField(labelWithString: "Screenshot")
-            column.textColor = .secondaryLabelColor
-            top.addArrangedSubview(column)
+            for title in ["Screenshot", "Recording"] {
+                let column = NSTextField(labelWithString: title)
+                column.textColor = .secondaryLabelColor
+                column.alignment = .center
+                column.translatesAutoresizingMaskIntoConstraints = false
+                column.widthAnchor.constraint(equalToConstant: 90).isActive = true
+                top.addArrangedSubview(column)
+            }
         }
-        func choice(_ title: String, _ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSView {
-            let box = checkbox(get, set)
+        typealias Option = (get: () -> Bool, set: (Bool) -> Void)
+        func cell(_ option: Option?) -> NSView {
             let holder = NSView()
             holder.translatesAutoresizingMaskIntoConstraints = false
-            holder.widthAnchor.constraint(equalToConstant: 72).isActive = true
-            box.translatesAutoresizingMaskIntoConstraints = false
-            holder.addSubview(box)
+            holder.widthAnchor.constraint(equalToConstant: 90).isActive = true
+            holder.heightAnchor.constraint(equalToConstant: 18).isActive = true
+            let control: NSView
+            if let option {
+                control = checkbox(option.get, option.set)
+            } else {
+                let dash = NSTextField(labelWithString: "—")
+                dash.textColor = .tertiaryLabelColor
+                control = dash
+            }
+            control.translatesAutoresizingMaskIntoConstraints = false
+            holder.addSubview(control)
             NSLayoutConstraint.activate([
-                box.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
-                box.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
-                holder.heightAnchor.constraint(equalToConstant: 18)
+                control.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+                control.centerYAnchor.constraint(equalTo: holder.centerYAnchor)
             ])
-            return row(title, holder)
+            return holder
         }
-        section("After Capture", subtitle: "Decide what should happen after taking a screenshot.", [
+        func choice(_ title: String, _ shot: Option?, _ recording: Option?) -> NSView {
+            row(title, horizontal(cell(shot), cell(recording)))
+        }
+        section("After Capture", subtitle: "Decide what should happen after taking a screenshot or recording a video.", [
             header,
-            choice("Show Quick Access Overlay", { s.afterCaptureShowPreview }, { s.afterCaptureShowPreview = $0 }),
-            choice("Copy file to clipboard", { s.afterCaptureCopy }, { s.afterCaptureCopy = $0 }),
-            choice("Save", { s.afterCaptureSave }, { s.afterCaptureSave = $0 }),
-            choice("Open Annotate tool", { s.afterCaptureAnnotate }, { s.afterCaptureAnnotate = $0 })
+            choice("Show Quick Access Overlay", ({ s.afterCaptureShowPreview }, { s.afterCaptureShowPreview = $0 }),
+                   ({ s.afterRecordingShowPreview }, { s.afterRecordingShowPreview = $0 })),
+            choice("Copy file to clipboard", ({ s.afterCaptureCopy }, { s.afterCaptureCopy = $0 }),
+                   ({ s.afterRecordingCopy }, { s.afterRecordingCopy = $0 })),
+            choice("Save", ({ s.afterCaptureSave }, { s.afterCaptureSave = $0 }),
+                   ({ s.afterRecordingSave }, { s.afterRecordingSave = $0 })),
+            choice("Open Annotate tool", ({ s.afterCaptureAnnotate }, { s.afterCaptureAnnotate = $0 }), nil),
+            choice("Pin to the screen", ({ s.afterCapturePin }, { s.afterCapturePin = $0 }), nil)
         ])
     }
 
@@ -465,27 +554,53 @@ final class GeneralPane: SettingsPane {
     }
 }
 
-final class ShortcutsPane: SettingsPane {
+final class ShortcutsPane: SettingsPane, NSSearchFieldDelegate {
     private var recorders: [(ShortcutAction, ShortcutRecorder)] = []
+    private var query = ""
+    private lazy var search: NSSearchField = {
+        let field = NSSearchField()
+        field.placeholderString = "Search shortcuts"
+        field.controlSize = .regular
+        field.delegate = self
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        return field
+    }()
+
+    override var headerAccessory: NSView? { search }
+
+    func controlTextDidChange(_ obj: Notification) {
+        query = search.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+        rebuild()
+    }
 
     override func build() {
-        let groups: [(String, String, [ShortcutAction])] = [
-            ("General", "gearshape", [.allInOne]),
-            ("Screenshots", "camera", [.captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow,
-                                       .selfTimer, .scrollingCapture, .captureText]),
-            ("Screen Recording", "video", [.recordScreen, .pauseRecording])
+        recorders.removeAll()
+        let groups: [(String, String, [[ShortcutAction]])] = [
+            ("General", "gearshape", [[.allInOne, .toggleDesktopIcons, .openHistory, .restoreLastCapture]]),
+            ("Screenshots", "camera", [[.captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow, .selfTimer],
+                                       [.captureAreaCopy, .captureAreaSave, .captureAreaAnnotate, .captureAreaPin]]),
+            ("Screen Recording", "video", [[.recordScreen, .pauseRecording]]),
+            ("Scrolling Capture", "arrow.down", [[.scrollingCapture]]),
+            ("OCR", "text.viewfinder", [[.captureText]])
         ]
-        for (title, _, actions) in groups {
-            section(title, actions.map { action in
-                let recorder = ShortcutRecorder(shortcut: Settings.shared.shortcut(for: action)) { shortcut in
-                    Settings.shared.setShortcut(shortcut, for: action)
-                }
-                recorder.translatesAutoresizingMaskIntoConstraints = false
-                recorder.widthAnchor.constraint(equalToConstant: 180).isActive = true
-                recorders.append((action, recorder))
-                return row(action.title, recorder)
-            })
+        for (title, symbol, boxes) in groups {
+            var first = true
+            for actions in boxes {
+                let matching = actions.filter { query.isEmpty || $0.title.lowercased().contains(query) }
+                section(first ? title : nil, symbol: symbol, matching.map { action in
+                    let recorder = ShortcutRecorder(shortcut: Settings.shared.shortcut(for: action)) { shortcut in
+                        Settings.shared.setShortcut(shortcut, for: action)
+                    }
+                    recorder.translatesAutoresizingMaskIntoConstraints = false
+                    recorder.widthAnchor.constraint(equalToConstant: 180).isActive = true
+                    recorders.append((action, recorder))
+                    return row(action.title, recorder)
+                })
+                if !matching.isEmpty { first = false }
+            }
         }
+        guard query.isEmpty else { return }
         section("Options", [row("Click a shortcut, then press the new keys. Delete turns it off.",
                                 button("Restore Defaults") { [weak self] in
             Settings.shared.resetShortcuts()
@@ -495,7 +610,7 @@ final class ShortcutsPane: SettingsPane {
 }
 
 final class QuickAccessPane: SettingsPane {
-    private var intervalPopup: NSPopUpButton?
+    private var autoCloseRows: [NSView] = []
 
     override func build() {
         let s = Settings.shared
@@ -505,24 +620,28 @@ final class QuickAccessPane: SettingsPane {
                 s.previewPosition = positions[$0]
             }),
             row("Move to active screen", toggle({ s.previewOnActiveScreen }, { s.previewOnActiveScreen = $0 }),
-                note: "Active screen is the screen where your cursor is pointing.")
+                note: "Active screen is the screen where your cursor is pointing."),
+            row("Overlay size", slider(s.previewScale, 0.7...1.3, ticks: 5) { s.previewScale = $0 })
         ])
 
         let delays = [5, 10, 30, 60]
         let interval = popup(["5 seconds", "10 seconds", "30 seconds", "1 minute"],
                              selected: delays.firstIndex(of: s.previewAutoClose) ?? 2) { s.previewAutoClose = delays[$0] }
-        interval.isEnabled = s.previewAutoClose > 0
-        intervalPopup = interval
+        let action = popup(["Close", "Save and Close"], selected: s.autoCloseSaves ? 1 : 0) { s.autoCloseSaves = $0 == 1 }
+        for control in [interval, action] { control.isEnabled = s.previewAutoClose > 0 }
         section("Behavior", [
-            row("Auto-close", toggle({ s.previewAutoClose > 0 }, { [weak self] on in
-                s.previewAutoClose = on ? delays[self?.intervalPopup?.indexOfSelectedItem ?? 2] : 0
-                self?.intervalPopup?.isEnabled = on
+            row("Auto-close", toggle({ s.previewAutoClose > 0 }, { on in
+                s.previewAutoClose = on ? delays[interval.indexOfSelectedItem] : 0
+                for control in [interval, action] { control.isEnabled = on }
             })),
+            row("Action", action),
             row("Interval", interval)
         ])
         section(nil, [
             row("Close after dragging", toggle({ s.closePreviewAfterDragging }, { s.closePreviewAfterDragging = $0 }),
-                note: "Closes the overlay once you drag the capture into another app.")
+                note: "Closes the overlay once you drag the capture into another app."),
+            row("Save button behavior", popup(["Save to “Export location”", "Ask where to save"],
+                                              selected: s.saveButtonAsks ? 1 : 0) { s.saveButtonAsks = $0 == 1 })
         ])
     }
 }
@@ -531,13 +650,15 @@ final class WallpaperPane: SettingsPane {
     private var choice: NSPopUpButton?
 
     override func build() {
-        let popup = popup(titles(), selected: Settings.shared.customWallpaper == nil ? 0 : 1) { [weak self] index in
+        let s = Settings.shared
+        let popup = popup(titles(), selected: s.customWallpaper == nil ? 0 : 1) { [weak self] index in
             self?.picked(index)
         }
         choice = popup
         section("Desktop", [
             row("Wallpaper", popup,
-                note: "Set a custom wallpaper used to hide desktop icons and as the background behind window screenshots.")
+                note: "Set a custom wallpaper used to hide desktop icons and as the background behind window screenshots."),
+            row("Update wallpaper when switching Spaces", toggle({ s.wallpaperFollowsSpaces }, { s.wallpaperFollowsSpaces = $0 }))
         ])
     }
 
@@ -564,35 +685,30 @@ final class WallpaperPane: SettingsPane {
 }
 
 final class ScreenshotsPane: SettingsPane {
-    private var qualityRow: NSView?
-
     override func build() {
         let s = Settings.shared
         let formats = Settings.ImageFormat.allCases
-        let quality = NSSlider(value: s.jpegQuality, minValue: 0.3, maxValue: 1, target: nil, action: nil)
-        quality.controlSize = .small
-        let sliderTarget = Callback { sender in s.jpegQuality = (sender as? NSSlider)?.doubleValue ?? 0.85 }
-        quality.target = sliderTarget
-        quality.action = #selector(Callback.fire(_:))
-        objc_setAssociatedObject(quality, "target", sliderTarget, .OBJC_ASSOCIATION_RETAIN)
-        quality.translatesAutoresizingMaskIntoConstraints = false
-        quality.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        let qualityRow = row("JPEG quality", quality)
-        qualityRow.isHidden = s.imageFormat != .jpeg
-        self.qualityRow = qualityRow
-
         let presets = BackgroundPresets.all.map(\.name)
-        section("Output", [
+        var output = [
             row("File format", popup(["PNG", "JPEG"], selected: formats.firstIndex(of: s.imageFormat) ?? 0) { [weak self] in
                 s.imageFormat = formats[$0]
-                self?.qualityRow?.isHidden = s.imageFormat != .jpeg
-            }),
-            qualityRow,
+                self?.rebuild()
+            })
+        ]
+        if s.imageFormat == .jpeg {
+            output.append(row("JPEG quality", slider(s.jpegQuality, 0.3...1) { s.jpegQuality = $0 }))
+        }
+        section("Output", output)
+        section(nil, [
+            row("Convert to sRGB profile", toggle({ s.convertToSRGB }, { s.convertToSRGB = $0 })),
             row("Scale Retina screenshots to 1x", toggle({ s.scaleScreenshotsTo1x }, { s.scaleScreenshotsTo1x = $0 })),
+            row("Add 1px border to all screenshots", toggle({ s.addBorder }, { s.addBorder = $0 }))
+        ])
+        section(nil, [
             row("Background preset", popup(["None"] + presets,
                                            selected: (presets.firstIndex { $0 == s.autoBackgroundPreset } ?? -1) + 1) {
                 s.autoBackgroundPreset = $0 == 0 ? nil : presets[$0 - 1]
-            }, note: "Apply a Background Tool preset to all screenshots. You can create presets in Annotate.")
+            }, note: "Apply Background Tool preset to all screenshots. You can create presets in Annotate.")
         ])
 
         let delays = [3, 5, 10]
@@ -607,16 +723,89 @@ final class ScreenshotsPane: SettingsPane {
                                                                     { s.fullscreenOnWallpaper = $0 }))
         ])
 
-        let styles = Settings.WindowStyle.allCases
-        section("Window Screenshots", [
-            row("Background", popup(styles.map(\.title), selected: styles.firstIndex(of: s.windowStyle) ?? 2) {
-                s.windowStyle = styles[$0]
-            }, note: "You can customize the wallpaper in the Wallpaper tab.")
-        ])
+        // Window background as two picture tiles, like the reference.
+        let onWallpaper = s.windowStyle == .background
+        let tiles = horizontal(
+            tile("With wallpaper", selected: onWallpaper, wallpaper: true) { [weak self] in
+                s.windowStyle = .background
+                self?.rebuild()
+            },
+            tile("Transparent", selected: !onWallpaper, wallpaper: false) { [weak self] in
+                s.windowStyle = s.windowStyle == .background ? .shadow : s.windowStyle
+                self?.rebuild()
+            })
+        tiles.spacing = 14
+        var window = [row("Background", tiles, note: "You can customize the wallpaper in Wallpaper settings.")]
+        if onWallpaper {
+            window.append(row("Padding", slider(s.windowPadding, 16...120, ticks: 8) { s.windowPadding = $0 }))
+        } else {
+            window.append(row("Capture window shadow", toggle({ s.windowStyle == .shadow }, {
+                s.windowStyle = $0 ? .shadow : .transparent
+            })))
+        }
+        section("Window Screenshots", window)
+        // Below the box, right-aligned, like the reference.
+        let reset = button("Reset Defaults") { [weak self] in
+            UserDefaults.standard.removeObject(forKey: "windowStyle")
+            UserDefaults.standard.removeObject(forKey: "windowPadding")
+            self?.rebuild()
+        }
+        let resetRow = horizontal(NSView(), reset)
+        resetRow.translatesAutoresizingMaskIntoConstraints = false
+        resetRow.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
+        block(resetRow)
 
         section("Crosshair", [
+            row("Crosshair Mode", popup(["Disabled", "Enabled"], selected: s.crosshairLines ? 1 : 0) { s.crosshairLines = $0 == 1 },
+                note: "Shows guide lines across the screen through the cursor while selecting."),
             row("Show magnifier", toggle({ s.showMagnifier }, { s.showMagnifier = $0 }))
         ])
+    }
+
+    /// A small picture of a window, on wallpaper or a checkerboard, with a caption.
+    private func tile(_ title: String, selected: Bool, wallpaper: Bool, action: @escaping () -> Void) -> NSView {
+        let picture = NSView()
+        picture.wantsLayer = true
+        picture.layer?.cornerRadius = 8
+        picture.layer?.masksToBounds = true
+        picture.layer?.borderWidth = selected ? 2.5 : 0.5
+        picture.layer?.borderColor = (selected ? NSColor.controlAccentColor : NSColor.separatorColor).cgColor
+        if wallpaper {
+            let gradient = CAGradientLayer()
+            gradient.colors = [NSColor.systemOrange.cgColor, NSColor.systemBrown.cgColor]
+            gradient.frame = CGRect(x: 0, y: 0, width: 84, height: 60)
+            picture.layer?.addSublayer(gradient)
+        } else {
+            picture.layer?.backgroundColor = NSColor(patternImage: Self.checkerboard).cgColor
+        }
+        let window = CALayer()
+        window.frame = CGRect(x: 16, y: 14, width: 52, height: 34)
+        window.backgroundColor = NSColor.white.cgColor
+        window.cornerRadius = 4
+        window.shadowOpacity = 0.3
+        window.shadowRadius = 3
+        window.shadowOffset = CGSize(width: 0, height: -1)
+        picture.layer?.addSublayer(window)
+        picture.translatesAutoresizingMaskIntoConstraints = false
+        picture.widthAnchor.constraint(equalToConstant: 84).isActive = true
+        picture.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        let caption = NSTextField(labelWithString: title)
+        caption.font = .systemFont(ofSize: 11)
+        caption.textColor = selected ? .labelColor : .secondaryLabelColor
+        let column = NSStackView(views: [picture, caption])
+        column.orientation = .vertical
+        column.spacing = 4
+        let click = NSClickGestureRecognizer(target: target { _ in action() }, action: #selector(Callback.fire(_:)))
+        column.addGestureRecognizer(click)
+        return column
+    }
+
+    private static let checkerboard: NSImage = NSImage(size: CGSize(width: 12, height: 12), flipped: false) { rect in
+        NSColor(white: 0.85, alpha: 1).setFill(); rect.fill()
+        NSColor(white: 0.7, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 6, height: 6).fill()
+        NSRect(x: 6, y: 6, width: 6, height: 6).fill()
+        return true
     }
 }
 
@@ -633,26 +822,82 @@ final class RecordingPane: SettingsPane {
     }
 }
 
+final class AnnotatePane: SettingsPane {
+    override func build() {
+        let s = Settings.shared
+        section("Tools", [
+            row("Inverse arrow direction", toggle({ s.annotateInverseArrows }, { s.annotateInverseArrows = $0 }),
+                note: "Press ⌥ (option) when drawing to invert the behavior."),
+            row("Smooth drawing", toggle({ s.annotateSmoothDrawing }, { s.annotateSmoothDrawing = $0 })),
+            row("Remember if background tool was opened", toggle({ s.annotateRememberBackground },
+                                                                 { s.annotateRememberBackground = $0 })),
+            row("Draw shadow on objects", toggle({ s.annotateShadows }, { s.annotateShadows = $0 }))
+        ])
+        section("Window", [
+            row("Always on top", toggle({ s.annotateAlwaysOnTop }, { s.annotateAlwaysOnTop = $0 })),
+            row("Show Dock icon", toggle({ s.annotateShowDockIcon }, { s.annotateShowDockIcon = $0 }),
+                note: "Shows Snapzy in the Dock while an Annotate window is open.")
+        ])
+        section("Accessibility", [
+            row("Show color names", toggle({ s.annotateColorNames }, { s.annotateColorNames = $0 }),
+                note: "Shows each colour's name when you point at it in the colour picker.")
+        ])
+    }
+}
+
 final class AdvancedPane: SettingsPane {
+    private static let languages: [(String, String)] = [
+        ("Automatically Detect Language", ""), ("English", "en-US"), ("French", "fr-FR"), ("German", "de-DE"),
+        ("Italian", "it-IT"), ("Spanish", "es-ES"), ("Portuguese", "pt-BR"), ("Chinese (Simplified)", "zh-Hans"),
+        ("Chinese (Traditional)", "zh-Hant"), ("Japanese", "ja-JP"), ("Korean", "ko-KR"), ("Russian", "ru-RU"),
+        ("Ukrainian", "uk-UA")
+    ]
+
     override func build() {
         let s = Settings.shared
         section("File Name", [
-            row("Screenshots", textField(s.screenshotNameTemplate) { s.screenshotNameTemplate = $0 }),
-            row("Recordings", textField(s.recordingNameTemplate) { s.recordingNameTemplate = $0 },
-                note: "Use {date} and {time}, e.g. “Snapzy {date} at {time}”. Press Return to apply.")
+            row("Ask for name after every capture", toggle({ s.askForName }, { s.askForName = $0 })),
+            row("Screenshot name format", textField(s.screenshotNameTemplate, width: 220) { s.screenshotNameTemplate = $0 }),
+            row("Recording name format", textField(s.recordingNameTemplate, width: 220) { s.recordingNameTemplate = $0 },
+                note: "Use {date} and {time}, e.g. “Snapzy {date} at {time}”. Press Return to apply."),
+            row("Add “@2x” suffix to Retina screenshots", toggle({ s.retinaSuffix }, { s.retinaSuffix = $0 }),
+                note: "This option improves compatibility with displaying Retina screenshots in third-party apps.")
+        ])
+        let modes = Settings.ClipboardMode.allCases
+        section("Clipboard", [
+            row("Copy to clipboard", popup(modes.map(\.title), selected: modes.firstIndex(of: s.clipboardMode) ?? 0) {
+                s.clipboardMode = modes[$0]
+            }, note: "Adjust this option if you've encountered any issues with pasting from clipboard or clipboard managers.")
         ])
         let days = [0, 1, 3, 7, 30]
         section("Capture History", [
             row("Keep history", popup(["Never", "1 day", "3 days", "1 week", "1 month"],
                                       selected: days.firstIndex(of: s.historyDays) ?? 4) { s.historyDays = days[$0] },
-                note: "You can restore old files with “Capture History” from the menu bar.")
+                note: "You can restore old files with “Capture History” option from the menu bar.")
         ])
+        let codes = Self.languages.map(\.1)
         section("Text Recognition", [
-            row("Keep line breaks", toggle({ s.keepLineBreaks }, { s.keepLineBreaks = $0 }))
+            row("Language", popup(Self.languages.map(\.0), selected: codes.firstIndex(of: s.ocrLanguage) ?? 0) {
+                s.ocrLanguage = codes[$0]
+            }),
+            row("Keep line breaks", toggle({ s.keepLineBreaks }, { s.keepLineBreaks = $0 })),
+            row("Detect links", toggle({ s.ocrDetectLinks }, { s.ocrDetectLinks = $0 }),
+                note: "Reads QR codes and barcodes as links.")
+        ])
+        section("All-In-One", [
+            row("Remember last selection", toggle({ s.allInOneRemember }, { s.allInOneRemember = $0 }))
+        ])
+        section("Pinned Screenshots", [
+            row("Rounded corners", toggle({ s.pinRounded }, { s.pinRounded = $0 })),
+            row("Shadow", toggle({ s.pinShadow }, { s.pinShadow = $0 })),
+            row("Border", toggle({ s.pinBorder }, { s.pinBorder = $0 }))
+        ])
+        section("API", [
+            row("Allow URL scheme API", toggle({ s.allowURLScheme }, { s.allowURLScheme = $0 }),
+                note: "Lets other apps and scripts run captures with links like snapzy://capture-area or snapzy://record-screen.")
         ])
         section("Other", [
-            row("Restore every option and shortcut to its default.",
-                button("Reset All Settings…") { [weak self] in self?.confirmReset() })
+            row("", button("Reset All Settings…") { [weak self] in self?.confirmReset() })
         ])
     }
 
@@ -666,7 +911,7 @@ final class AdvancedPane: SettingsPane {
         if alert.runModal() == .alertFirstButtonReturn {
             Settings.shared.resetAll()
             UserDefaults.standard.removeObject(forKey: "recordingOptions")
-            SettingsWindowController.show(tab: .advanced)
+            rebuild()
         }
     }
 }

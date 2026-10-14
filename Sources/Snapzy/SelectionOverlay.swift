@@ -552,6 +552,14 @@ final class OverlayView: NSView {
         } else if let hint, selection == nil {
             drawHint(hint)
         }
+        if Settings.shared.crosshairLines, !picksWindows, let mouse, isDrawingOrIdle {
+            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.55).cgColor)
+            ctx.setLineWidth(1)
+            ctx.setLineDash(phase: 0, lengths: [4, 3])
+            ctx.strokeLineSegments(between: [CGPoint(x: 0, y: mouse.y), CGPoint(x: bounds.maxX, y: mouse.y),
+                                             CGPoint(x: mouse.x, y: 0), CGPoint(x: mouse.x, y: bounds.maxY)])
+            ctx.setLineDash(phase: 0, lengths: [])
+        }
         if Settings.shared.showMagnifier, !picksWindows, mode != .scrollArea, let mouse, isDrawingOrIdle {
             drawMagnifier(at: mouse, ctx)
         }

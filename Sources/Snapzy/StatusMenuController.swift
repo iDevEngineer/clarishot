@@ -23,6 +23,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.menu = menu
         statusItem.menu = menu
         Self.shared = self
+        applyVisibility()
+        NotificationCenter.default.addObserver(forName: Settings.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyVisibility() }
+        }
+    }
+
+    /// "Show menu bar icon" off hides it, except while recording (the stop button lives there).
+    private func applyVisibility() {
+        statusItem.isVisible = Settings.shared.showMenuBarIcon || onStopRecording != nil
     }
 
     private func buildMenu() -> NSMenu {
@@ -123,6 +132,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// Swaps the icon for a red stop button with a running timer. Clicking it stops.
     func showRecording(elapsed: @escaping () -> TimeInterval, onStop: @escaping () -> Void) {
         onStopRecording = onStop
+        statusItem.isVisible = true
         statusItem.menu = nil
         guard let button = statusItem.button else { return }
         button.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: "Stop recording")
@@ -158,6 +168,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let image: NSImage? = AppIcon.menuBar()
         button.image = image
         statusItem.menu = menu
+        applyVisibility()
     }
 
     @objc private func stopClicked() { onStopRecording?() }

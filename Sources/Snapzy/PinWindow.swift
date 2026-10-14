@@ -35,7 +35,7 @@ final class PinWindow: NSPanel {
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .floating
-        hasShadow = true
+        hasShadow = Settings.shared.pinShadow
         // Clear window so the rounded corners show (the shadow follows the rounded shape).
         backgroundColor = .clear
         isOpaque = false
@@ -139,8 +139,12 @@ private final class PinView: NSView {
         wantsLayer = true
         layer?.contents = image
         layer?.contentsGravity = .resizeAspect
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = Settings.shared.pinRounded ? 12 : 0
         layer?.masksToBounds = true
+        if Settings.shared.pinBorder {
+            layer?.borderWidth = 1
+            layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        }
 
         controls.frame = bounds
         controls.autoresizingMask = [.width, .height]

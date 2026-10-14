@@ -6,17 +6,22 @@ enum TextRecognizer {
     /// Reads the text in `image`, keeping line breaks (or joining lines with spaces) and
     /// leaving a blank line between paragraphs. Any QR codes or barcodes are added as
     /// their contents, e.g. a link. Runs synchronously; call off the main thread.
-    static func recognize(_ image: CGImage, keepLineBreaks: Bool = true) -> String {
+    static func recognize(_ image: CGImage, keepLineBreaks: Bool = true, language: String = "",
+                          detectLinks: Bool = true) -> String {
         let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = .accurate
         textRequest.usesLanguageCorrection = true
-        textRequest.automaticallyDetectsLanguage = true
+        if language.isEmpty {
+            textRequest.automaticallyDetectsLanguage = true
+        } else {
+            textRequest.recognitionLanguages = [language]
+        }
         let codeRequest = VNDetectBarcodesRequest()
-        try? VNImageRequestHandler(cgImage: image).perform([textRequest, codeRequest])
+        try? VNImageRequestHandler(cgImage: image).perform(detectLinks ? [textRequest, codeRequest] : [textRequest])
 
         let text = format(textRequest.results ?? [], keepLineBreaks: keepLineBreaks)
         var codes: [String] = []
-        for payload in (codeRequest.results ?? []).compactMap(\.payloadStringValue) where !codes.contains(payload) {
+        for payload in (detectLinks ? codeRequest.results ?? [] : []).compactMap(\.payloadStringValue) where !codes.contains(payload) {
             codes.append(payload)
         }
         return ([text] + codes).filter { !$0.isEmpty }.joined(separator: "\n\n")

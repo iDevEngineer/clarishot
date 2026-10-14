@@ -35,15 +35,21 @@ enum ScreenCapturer {
     /// Captures every screen at full Retina resolution, leaving out Snapzy's own windows.
     static func captureAllScreens() async throws -> [ScreenShot] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         // Keep the wallpaper cover in shots so hidden desktop icons stay hidden.
         let coverIDs = Set(DesktopIconHider.shared.windows.map { CGWindowID($0.windowNumber) })
-        let keep = content.windows.filter { coverIDs.contains($0.windowID) }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        var excluded = content.windows.filter { $0.owningApplication?.processID == pid && !coverIDs.contains($0.windowID) }
+        if Settings.shared.hideDesktopIconsWhileCapturing {
+            let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+            excluded += content.windows.filter {
+                $0.owningApplication?.bundleIdentifier == "com.apple.finder" && $0.windowLayer == iconLevel
+            }
+        }
         var shots: [ScreenShot] = []
         for screen in NSScreen.screens {
             let id = displayID(for: screen)
             guard let display = content.displays.first(where: { $0.displayID == id }) else { continue }
-            let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: keep)
+            let filter = SCContentFilter(display: display, excludingWindows: excluded)
             let config = SCStreamConfiguration()
             config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
             config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
@@ -107,9 +113,11 @@ enum ScreenCapturer {
     /// Text plus any QR code / barcode contents (see `TextRecognizer`).
     static func recognizeText(in image: CGImage) async -> String {
         let keepLineBreaks = Settings.shared.keepLineBreaks
+        let language = Settings.shared.ocrLanguage, links = Settings.shared.ocrDetectLinks
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: TextRecognizer.recognize(image, keepLineBreaks: keepLineBreaks))
+                continuation.resume(returning: TextRecognizer.recognize(image, keepLineBreaks: keepLineBreaks,
+                                                                        language: language, detectLinks: links))
             }
         }
     }

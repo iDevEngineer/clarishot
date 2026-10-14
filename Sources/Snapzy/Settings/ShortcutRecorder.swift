@@ -24,7 +24,7 @@ final class ShortcutRecorder: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     private func updateTitle() {
-        title = shortcut?.displayString ?? "None"
+        title = shortcut?.displayString ?? "Record shortcut"
     }
 
     @objc private func startRecording() {

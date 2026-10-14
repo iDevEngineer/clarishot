@@ -40,7 +40,9 @@ struct Shortcut: Equatable {
 /// Everything that can have a global shortcut. ⌥⇧⌘ defaults avoid the system's ⇧⌘3/4/5.
 enum ShortcutAction: String, CaseIterable {
     case allInOne, captureArea, capturePreviousArea, captureFullscreen, captureWindow, scrollingCapture, selfTimer,
-         captureText, recordScreen, pauseRecording
+         captureText, recordScreen, pauseRecording,
+         toggleDesktopIcons, openHistory, restoreLastCapture,
+         captureAreaCopy, captureAreaSave, captureAreaAnnotate, captureAreaPin
 
     var title: String {
         switch self {
@@ -54,10 +56,18 @@ enum ShortcutAction: String, CaseIterable {
         case .captureText: return "Capture Text (OCR)"
         case .recordScreen: return "Record Screen / Stop Recording"
         case .pauseRecording: return "Pause / Resume Recording"
+        case .toggleDesktopIcons: return "Toggle Desktop Icons"
+        case .openHistory: return "Open Capture History"
+        case .restoreLastCapture: return "Restore Last Capture"
+        case .captureAreaCopy: return "Capture Area & Copy to Clipboard"
+        case .captureAreaSave: return "Capture Area & Save"
+        case .captureAreaAnnotate: return "Capture Area & Annotate"
+        case .captureAreaPin: return "Capture Area & Pin to the Screen"
         }
     }
 
-    var defaultShortcut: Shortcut {
+    /// nil = no shortcut until the user records one.
+    var defaultShortcut: Shortcut? {
         let m: NSEvent.ModifierFlags = [.option, .shift, .command]
         switch self {
         case .allInOne: return Shortcut(key: "a", keyCode: UInt32(kVK_ANSI_A), modifiers: m)
@@ -70,6 +80,8 @@ enum ShortcutAction: String, CaseIterable {
         case .captureText: return Shortcut(key: "2", keyCode: UInt32(kVK_ANSI_2), modifiers: m)
         case .recordScreen: return Shortcut(key: "r", keyCode: UInt32(kVK_ANSI_R), modifiers: m)
         case .pauseRecording: return Shortcut(key: "p", keyCode: UInt32(kVK_ANSI_P), modifiers: m)
+        case .toggleDesktopIcons, .openHistory, .restoreLastCapture,
+             .captureAreaCopy, .captureAreaSave, .captureAreaAnnotate, .captureAreaPin: return nil
         }
     }
 
@@ -87,6 +99,13 @@ enum ShortcutAction: String, CaseIterable {
         case .captureText: c.captureText()
         case .recordScreen: RecordingCoordinator.shared.toggle()
         case .pauseRecording: RecordingCoordinator.shared.togglePause()
+        case .toggleDesktopIcons: DesktopIconHider.shared.toggle()
+        case .openHistory: HistoryWindowController.show()
+        case .restoreLastCapture: PreviewManager.shared.restoreRecentlyClosed()
+        case .captureAreaCopy: c.captureArea(then: .copy)
+        case .captureAreaSave: c.captureArea(then: .save)
+        case .captureAreaAnnotate: c.captureArea(then: .annotate)
+        case .captureAreaPin: c.captureArea(then: .pin)
         }
     }
 }

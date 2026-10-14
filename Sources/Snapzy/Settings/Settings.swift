@@ -242,10 +242,206 @@ final class Settings {
         notify()
     }
 
+    // MARK: Added to match the full Settings window
+
+    var showMenuBarIcon: Bool {
+        get { bool("showMenuBarIcon", default: true) }
+        set { set(newValue, "showMenuBarIcon") }
+    }
+
+    /// Leave Finder's desktop icons out of screenshots.
+    var hideDesktopIconsWhileCapturing: Bool {
+        get { bool("hideIconsWhileCapturing", default: false) }
+        set { set(newValue, "hideIconsWhileCapturing") }
+    }
+
+    /// "" = the system screenshot sound, otherwise a name from /System/Library/Sounds.
+    var shutterSound: String {
+        get { defaults.string(forKey: "shutterSound") ?? "" }
+        set { set(newValue, "shutterSound") }
+    }
+
+    var afterCapturePin: Bool {
+        get { bool("afterPin", default: false) }
+        set { set(newValue, "afterPin") }
+    }
+
+    var afterRecordingShowPreview: Bool {
+        get { bool("afterRecShowPreview", default: true) }
+        set { set(newValue, "afterRecShowPreview") }
+    }
+
+    var afterRecordingCopy: Bool {
+        get { bool("afterRecCopy", default: false) }
+        set { set(newValue, "afterRecCopy") }
+    }
+
+    var afterRecordingSave: Bool {
+        get { bool("afterRecSave", default: false) }
+        set { set(newValue, "afterRecSave") }
+    }
+
+    /// Quick Access card size, 0.7 … 1.3 of the normal size.
+    var previewScale: Double {
+        get { defaults.object(forKey: "previewScale") as? Double ?? 1 }
+        set { set(newValue, "previewScale") }
+    }
+
+    /// When auto-close fires: also save the capture first.
+    var autoCloseSaves: Bool {
+        get { bool("autoCloseSaves", default: false) }
+        set { set(newValue, "autoCloseSaves") }
+    }
+
+    /// The card's Save button asks where to save instead of using the export folder.
+    var saveButtonAsks: Bool {
+        get { bool("saveButtonAsks", default: false) }
+        set { set(newValue, "saveButtonAsks") }
+    }
+
+    var wallpaperFollowsSpaces: Bool {
+        get { bool("wallpaperFollowsSpaces", default: true) }
+        set { set(newValue, "wallpaperFollowsSpaces") }
+    }
+
+    var convertToSRGB: Bool {
+        get { bool("convertToSRGB", default: false) }
+        set { set(newValue, "convertToSRGB") }
+    }
+
+    var addBorder: Bool {
+        get { bool("addBorder", default: false) }
+        set { set(newValue, "addBorder") }
+    }
+
+    /// Wallpaper padding around window captures, in points.
+    var windowPadding: Double {
+        get { defaults.object(forKey: "windowPadding") as? Double ?? 48 }
+        set { set(newValue, "windowPadding") }
+    }
+
+    // Annotate
+    var annotateAlwaysOnTop: Bool {
+        get { bool("annotateOnTop", default: false) }
+        set { set(newValue, "annotateOnTop") }
+    }
+
+    var annotateShowDockIcon: Bool {
+        get { bool("annotateDockIcon", default: true) }
+        set { set(newValue, "annotateDockIcon") }
+    }
+
+    var annotateRememberBackground: Bool {
+        get { bool("annotateRememberBackground", default: false) }
+        set { set(newValue, "annotateRememberBackground") }
+    }
+
+    /// Last state of the background tool, used when "remember" is on.
+    var annotateBackgroundWasOpen: Bool {
+        get { bool("annotateBackgroundWasOpen", default: false) }
+        set { defaults.set(newValue, forKey: "annotateBackgroundWasOpen") }
+    }
+
+    var annotateShadows: Bool {
+        get { bool("annotateShadows", default: true) }
+        set { set(newValue, "annotateShadows") }
+    }
+
+    // Advanced
+    var askForName: Bool {
+        get { bool("askForName", default: false) }
+        set { set(newValue, "askForName") }
+    }
+
+    var retinaSuffix: Bool {
+        get { bool("retinaSuffix", default: true) }
+        set { set(newValue, "retinaSuffix") }
+    }
+
+    enum ClipboardMode: Int, CaseIterable {
+        case fileAndImage, image, file
+        var title: String {
+            switch self {
+            case .fileAndImage: return "File & Image (default)"
+            case .image: return "Image only"
+            case .file: return "File only"
+            }
+        }
+    }
+
+    var clipboardMode: ClipboardMode {
+        get { ClipboardMode(rawValue: defaults.integer(forKey: "clipboardMode")) ?? .fileAndImage }
+        set { set(newValue.rawValue, "clipboardMode") }
+    }
+
+    /// Text recognition language code, "" = detect automatically.
+    var ocrLanguage: String {
+        get { defaults.string(forKey: "ocrLanguage") ?? "" }
+        set { set(newValue, "ocrLanguage") }
+    }
+
+    /// Capture Text also reads QR codes as links.
+    var ocrDetectLinks: Bool {
+        get { bool("ocrDetectLinks", default: true) }
+        set { set(newValue, "ocrDetectLinks") }
+    }
+
+    var allInOneRemember: Bool {
+        get { bool("allInOneRemember", default: true) }
+        set { set(newValue, "allInOneRemember") }
+    }
+
+    var pinRounded: Bool {
+        get { bool("pinRounded", default: true) }
+        set { set(newValue, "pinRounded") }
+    }
+
+    var pinShadow: Bool {
+        get { bool("pinShadow", default: true) }
+        set { set(newValue, "pinShadow") }
+    }
+
+    var pinBorder: Bool {
+        get { bool("pinBorder", default: true) }
+        set { set(newValue, "pinBorder") }
+    }
+
+    var annotateInverseArrows: Bool {
+        get { bool("inverseArrows", default: false) }
+        set { set(newValue, "inverseArrows") }
+    }
+
+    var annotateSmoothDrawing: Bool {
+        get { bool("smoothDrawing", default: true) }
+        set { set(newValue, "smoothDrawing") }
+    }
+
+    var annotateColorNames: Bool {
+        get { bool("colorNames", default: false) }
+        set { set(newValue, "colorNames") }
+    }
+
+    /// Full-screen guide lines through the cursor while selecting an area.
+    var crosshairLines: Bool {
+        get { bool("crosshairLines", default: false) }
+        set { set(newValue, "crosshairLines") }
+    }
+
+    /// Lets other apps run captures through snapzy:// links.
+    var allowURLScheme: Bool {
+        get { bool("allowURLScheme", default: false) }
+        set { set(newValue, "allowURLScheme") }
+    }
+
     // MARK: Reset
 
     func resetAll() {
-        for key in ["playSounds", "exportFolder", "screenshotName", "recordingName", "imageFormat", "jpegQuality",
+        for key in ["inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
+                    "afterRecCopy", "afterRecSave", "previewScale", "autoCloseSaves", "saveButtonAsks",
+                    "wallpaperFollowsSpaces", "convertToSRGB", "addBorder", "windowPadding", "annotateOnTop",
+                    "annotateDockIcon", "annotateRememberBackground", "annotateShadows", "askForName", "retinaSuffix",
+                    "clipboardMode", "ocrLanguage", "ocrDetectLinks", "allInOneRemember", "pinRounded", "pinShadow",
+                    "pinBorder", "playSounds", "exportFolder", "screenshotName", "recordingName", "imageFormat", "jpegQuality",
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",

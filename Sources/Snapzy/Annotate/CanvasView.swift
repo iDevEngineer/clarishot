@@ -240,8 +240,14 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if let d = draft {
+        if var d = draft {
             draft = nil
+            let settings = Settings.shared
+            // Arrow head at the start instead of the end; ⌥ flips the setting for one arrow.
+            if d.tool == .arrow, settings.annotateInverseArrows != event.modifierFlags.contains(.option) {
+                swap(&d.start, &d.end)
+            }
+            if d.tool == .pencil, settings.annotateSmoothDrawing { d.points = Self.smoothed(d.points) }
             if !d.isEmpty {
                 document.checkpoint()
                 document.annotations.append(d)
@@ -405,5 +411,23 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         default:
             return p
         }
+    }
+}
+
+extension CanvasView {
+    /// Chaikin corner cutting: rounds off the jitter in a hand-drawn stroke.
+    static func smoothed(_ points: [CGPoint], passes: Int = 2) -> [CGPoint] {
+        guard points.count > 2 else { return points }
+        var result = points
+        for _ in 0..<passes {
+            var next = [result[0]]
+            for (a, b) in zip(result, result.dropFirst()) {
+                next.append(CGPoint(x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y))
+                next.append(CGPoint(x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y))
+            }
+            next.append(result[result.count - 1])
+            result = next
+        }
+        return result
     }
 }

@@ -239,6 +239,10 @@ enum AnnotationRenderer {
         ctx.setLineWidth(a.lineWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
+        let shadowed: Set<Tool> = [.arrow, .line, .rectangle, .ellipse, .pencil, .text, .filledRectangle]
+        if shadowed.contains(a.tool), UserDefaults.standard.object(forKey: "annotateShadows") as? Bool ?? true {
+            ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        }
 
         switch a.tool {
         case .rectangle:

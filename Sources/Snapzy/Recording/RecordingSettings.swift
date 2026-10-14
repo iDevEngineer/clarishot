@@ -80,6 +80,7 @@ final class RecordingSettingsViewController: NSViewController {
 
         if embedded {
             stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+            stack.spacing = 26 // same rhythm as the other Settings tabs
             stack.translatesAutoresizingMaskIntoConstraints = false
             stack.widthAnchor.constraint(equalToConstant: width - 40).isActive = true // the sections' width
             view = stack
@@ -117,7 +118,7 @@ final class RecordingSettingsViewController: NSViewController {
         let column = NSStackView(views: [label, group])
         column.orientation = .vertical
         column.alignment = .leading
-        column.spacing = 8
+        column.spacing = 9
         group.translatesAutoresizingMaskIntoConstraints = false
         group.widthAnchor.constraint(equalToConstant: width - 40).isActive = true
         return column
@@ -140,14 +141,11 @@ final class RecordingSettingsViewController: NSViewController {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 3
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 10, right: 0)
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: note == nil ? 8 : 10, right: 0)
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        top.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
-        let minimum = stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
-        minimum.priority = .required
-        minimum.isActive = true
+        top.heightAnchor.constraint(equalToConstant: 21).isActive = true
         stack.setHuggingPriority(.required, for: .vertical)
         stack.setContentCompressionResistancePriority(.required, for: .vertical)
         return stack
@@ -205,7 +203,7 @@ final class RecordingSettingsViewController: NSViewController {
 
     private func toggle(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSSwitch {
         let control = NSSwitch()
-        control.controlSize = .small
+        control.controlSize = .mini
         control.state = get() ? .on : .off
         let target = Callback { sender in set((sender as? NSSwitch)?.state == .on) }
         targets.append(target)
