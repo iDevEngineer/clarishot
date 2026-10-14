@@ -14,8 +14,9 @@ final class RecordingCoordinator {
     private var camera: CameraBubble?
     private var clicks: ClickHighlightWindow?
     /// Clicks inside the recorded area, for automatic zooms in the zoom editor.
-    private var clickLog: [RecordedClick] = []
+    private var clickLog = PointerLog()
     private var clickMonitor: Any?
+    private var cursorTimer: Timer?
     private var keys: KeystrokeWindow?
     private var recorder: AnyObject? // ScreenRecorder (macOS 15+)
     private var tick: Timer?
@@ -289,14 +290,27 @@ final class RecordingCoordinator {
     /// Notes each click inside the recorded area with the recorded time (pauses excluded).
     @available(macOS 15.0, *)
     private func startClickLog(recorder: ScreenRecorder, area: CGRect) {
-        clickLog = []
+        clickLog = PointerLog()
+        cursorTimer?.invalidate()
+        // The pointer's path, clamped to the area, for zooms that follow the cursor.
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self, weak recorder] _ in
+            MainActor.assumeIsolated {
+                guard let self, let recorder, !recorder.isPaused else { return }
+                let p = NSEvent.mouseLocation
+                let x = min(max((p.x - area.minX) / area.width, 0), 1)
+                let y = min(max((area.maxY - p.y) / area.height, 0), 1)
+                if let last = self.clickLog.cursor.last, abs(last.x - x) < 0.0005, abs(last.y - y) < 0.0005,
+                   recorder.elapsed - last.t < 1 { return } // skip unchanged samples
+                self.clickLog.cursor.append(RecordedClick(t: recorder.elapsed, x: x, y: y))
+            }
+        }
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self, weak recorder] _ in
             MainActor.assumeIsolated {
                 guard let self, let recorder, !recorder.isPaused else { return }
                 let p = NSEvent.mouseLocation
                 guard area.contains(p) else { return }
-                self.clickLog.append(RecordedClick(t: recorder.elapsed,
+                self.clickLog.clicks.append(RecordedClick(t: recorder.elapsed,
                                                    x: (p.x - area.minX) / area.width,
                                                    y: (area.maxY - p.y) / area.height))
             }
@@ -400,6 +414,8 @@ final class RecordingCoordinator {
         recorder = nil
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
+        cursorTimer?.invalidate()
+        cursorTimer = nil
         tick?.invalidate()
         tick = nil
         controlBar?.orderOut(nil)

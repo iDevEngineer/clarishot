@@ -8,19 +8,30 @@ struct RecordedClick: Codable, Equatable {
     var y: Double
 }
 
+/// Clicks plus the pointer's path (sampled about 20 times a second), same units as clicks.
+struct PointerLog: Codable {
+    var clicks: [RecordedClick] = []
+    var cursor: [RecordedClick] = []
+}
+
 /// Saved beside the movie as "<movie>.clicks.json".
 enum ClickLog {
     static func file(for movie: URL) -> URL { movie.appendingPathExtension("clicks.json") }
 
-    static func save(_ clicks: [RecordedClick], for movie: URL) {
-        guard !clicks.isEmpty, let data = try? JSONEncoder().encode(clicks) else { return }
+    static func save(_ log: PointerLog, for movie: URL) {
+        guard !log.clicks.isEmpty || !log.cursor.isEmpty, let data = try? JSONEncoder().encode(log) else { return }
         try? data.write(to: file(for: movie), options: .atomic)
     }
 
-    static func load(for movie: URL) -> [RecordedClick] {
-        guard let data = try? Data(contentsOf: file(for: movie)),
-              let clicks = try? JSONDecoder().decode([RecordedClick].self, from: data) else { return [] }
-        return clicks.filter { $0.t >= 0 && (0...1).contains($0.x) && (0...1).contains($0.y) }
+    static func load(for movie: URL) -> PointerLog {
+        guard let data = try? Data(contentsOf: file(for: movie)) else { return PointerLog() }
+        let valid: (RecordedClick) -> Bool = { $0.t >= 0 && (0...1).contains($0.x) && (0...1).contains($0.y) }
+        if let log = try? JSONDecoder().decode(PointerLog.self, from: data) {
+            return PointerLog(clicks: log.clicks.filter(valid), cursor: log.cursor.filter(valid).sorted { $0.t < $1.t })
+        }
+        // Older logs were a plain list of clicks.
+        let clicks = (try? JSONDecoder().decode([RecordedClick].self, from: data)) ?? []
+        return PointerLog(clicks: clicks.filter(valid))
     }
 
     /// Copies the log along with a movie (e.g. into Capture History).

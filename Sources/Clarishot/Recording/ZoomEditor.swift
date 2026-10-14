@@ -34,6 +34,8 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
     private let scaleLabel = NSTextField(labelWithString: "2.0×")
     private let deleteButton = NSButton(title: "Delete Zoom", target: nil, action: nil)
     private var clicks: [RecordedClick] = []
+    private var cursor: [RecordedClick] = []
+    private let followBox = NSButton(checkboxWithTitle: "Follow cursor", target: nil, action: nil)
     private var duration: Double = 0
     private var timeObserver: Any?
     private var compositionTask: Task<Void, Never>?
@@ -92,6 +94,9 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
         scaleSlider.translatesAutoresizingMaskIntoConstraints = false
         scaleSlider.widthAnchor.constraint(equalToConstant: 120).isActive = true
         scaleLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        followBox.target = self
+        followBox.action = #selector(followChanged)
+        followBox.toolTip = "Pan the zoom smoothly after the pointer as it moves"
         deleteButton.bezelStyle = .rounded
         deleteButton.target = self
         deleteButton.action = #selector(deleteZoom)
@@ -106,7 +111,7 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
         export.keyEquivalent = "\r"
 
         let controls = NSStackView(views: [playButton, timeLabel, NSView(), auto, add, zoomLabel, scaleSlider, scaleLabel,
-                                           deleteButton, NSView(), cancel, export])
+                                           followBox, deleteButton, NSView(), cancel, export])
         controls.spacing = 8
         controls.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         controls.translatesAutoresizingMaskIntoConstraints = false
@@ -139,14 +144,17 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
 
     private func load() async {
         duration = (try? await asset.load(.duration).seconds) ?? 0
-        clicks = ClickLog.load(for: url)
+        let log = ClickLog.load(for: url)
+        clicks = log.clicks
+        cursor = log.cursor
+        focus.cursor = cursor
         timeline.duration = duration
         timeline.clicks = clicks
         player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.timeChanged(time.seconds) }
         }
-        plan = ZoomPlan.automatic(from: clicks, duration: duration)
+        plan = ZoomPlan.automatic(from: clicks, cursor: cursor, duration: duration)
         timeChanged(0)
         if clicks.isEmpty {
             Toast.show("No clicks were recorded: double-click the timeline to add a zoom")
@@ -178,6 +186,10 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
         let segment = selected.flatMap { plan.segments[safe: $0] }
         scaleSlider.isEnabled = segment != nil
         deleteButton.isEnabled = segment != nil
+        followBox.isEnabled = segment != nil && !cursor.isEmpty
+        followBox.state = segment?.follow == true ? .on : .off
+        followBox.toolTip = cursor.isEmpty ? "This recording has no pointer path (recorded before this feature)"
+                                           : "Pan the zoom smoothly after the pointer as it moves"
         let scale: Double = segment?.scale ?? 2.0
         scaleSlider.doubleValue = scale
         scaleLabel.stringValue = String(format: "%.1f×", scale)
@@ -234,7 +246,7 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
             return
         }
         selected = nil
-        plan = ZoomPlan.automatic(from: clicks, duration: duration)
+        plan = ZoomPlan.automatic(from: clicks, cursor: cursor, duration: duration)
         Toast.show("\(plan.segments.count) zoom\(plan.segments.count == 1 ? "" : "s") placed at your clicks")
     }
 
@@ -251,7 +263,7 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
             return
         }
         var segments = plan.segments
-        segments.append(ZoomSegment(start: start, end: end))
+        segments.append(ZoomSegment(start: start, end: end, follow: !cursor.isEmpty))
         segments.sort { $0.start < $1.start }
         plan.segments = segments
         selected = segments.firstIndex { $0.start == start }
@@ -260,6 +272,11 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
     @objc private func scaleChanged() {
         guard let selected, plan.segments.indices.contains(selected) else { return }
         plan.segments[selected].scale = (scaleSlider.doubleValue * 4).rounded() / 4
+    }
+
+    @objc private func followChanged() {
+        guard let selected, plan.segments.indices.contains(selected) else { return }
+        plan.segments[selected].follow = followBox.state == .on
     }
 
     @objc private func deleteZoom() {
@@ -271,6 +288,8 @@ final class ZoomEditorController: NSObject, NSWindowDelegate {
     /// Clicking the preview with a zoom selected moves its centre there.
     private func aim(at point: CGPoint) {
         guard let selected, plan.segments.indices.contains(selected) else { return }
+        // Aiming by hand means holding still.
+        plan.segments[selected].follow = false
         plan.segments[selected].center = CGPoint(x: min(max(point.x, 0), 1), y: min(max(point.y, 0), 1))
     }
 
@@ -324,6 +343,7 @@ private extension Array {
 @MainActor
 private final class FocusOverlayView: NSView {
     var segment: ZoomSegment? { didSet { needsDisplay = true } }
+    var cursor: [RecordedClick] = []
     var videoBounds: () -> CGRect = { .zero }
     var onAim: ((CGPoint) -> Void)?
 
@@ -333,7 +353,9 @@ private final class FocusOverlayView: NSView {
         guard let segment else { return }
         let video = videoBounds()
         guard video.width > 0 else { return }
-        let rect = ZoomPlan(segments: [segment]).visibleRect(at: (segment.start + segment.end) / 2)
+        let plan = ZoomPlan(segments: [segment], cursor: cursor)
+        let rect = plan.visibleRect(at: (segment.start + segment.end) / 2)
+        func point(_ p: CGPoint) -> CGPoint { CGPoint(x: video.minX + p.x * video.width, y: video.maxY - p.y * video.height) }
         let zoom = CGRect(x: video.minX + rect.minX * video.width,
                           y: video.maxY - rect.maxY * video.height, // view is bottom-left origin
                           width: rect.width * video.width, height: rect.height * video.height)
@@ -345,7 +367,23 @@ private final class FocusOverlayView: NSView {
         outline.lineWidth = 2
         NSColor.controlAccentColor.setStroke()
         outline.stroke()
-        let label = String(format: "%.1f×  ·  click or drag to aim", segment.scale) as NSString
+        if segment.follow, !cursor.isEmpty {
+            // The smoothed path the zoom will follow during this segment.
+            let path = NSBezierPath()
+            var t = segment.start
+            while t <= segment.end {
+                if let p = plan.smoothedPointer(at: t) {
+                    path.isEmpty ? path.move(to: point(p)) : path.line(to: point(p))
+                }
+                t += 0.05
+            }
+            path.lineWidth = 2
+            path.setLineDash([4, 3], count: 2, phase: 0)
+            NSColor.systemOrange.setStroke()
+            path.stroke()
+        }
+        let hint = segment.follow ? "follows the pointer · click to hold still" : "click or drag to aim"
+        let label = String(format: "%.1f×  ·  %@", segment.scale, hint) as NSString
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold),
                                                     .foregroundColor: NSColor.white]
         let size = label.size(withAttributes: attrs)

@@ -8,6 +8,8 @@ struct ZoomSegment: Codable, Equatable {
     var end: Double
     var scale: Double = 2
     var center = CGPoint(x: 0.5, y: 0.5)
+    /// Pan smoothly after the pointer instead of holding `center`.
+    var follow = false
 
     var duration: Double { end - start }
 }
@@ -15,6 +17,8 @@ struct ZoomSegment: Codable, Equatable {
 /// The zooms for one recording, and the maths that turns them into a camera position.
 struct ZoomPlan: Equatable {
     var segments: [ZoomSegment] = []
+    /// The pointer's path while recording (time-sorted), for zooms that follow the cursor.
+    var cursor: [RecordedClick] = []
 
     /// Time taken to zoom in or out at each end of a segment.
     static let ramp = 0.45
@@ -22,7 +26,8 @@ struct ZoomPlan: Equatable {
 
     /// Zooms placed automatically at each click: from just before it to a moment after.
     /// Nearby clicks close in time share one zoom that follows them.
-    static func automatic(from clicks: [RecordedClick], duration: Double, scale: Double = 2) -> ZoomPlan {
+    static func automatic(from clicks: [RecordedClick], cursor: [RecordedClick] = [], duration: Double,
+                          scale: Double = 2) -> ZoomPlan {
         var segments: [ZoomSegment] = []
         for click in clicks.sorted(by: { $0.t < $1.t }) {
             let start = max(0, click.t - 0.6), end = min(duration, click.t + 2.2)
@@ -37,10 +42,34 @@ struct ZoomPlan: Equatable {
             } else {
                 let begin = max(start, segments.last?.end ?? 0)
                 guard end - begin >= minLength else { continue }
-                segments.append(ZoomSegment(start: begin, end: end, scale: scale, center: point))
+                segments.append(ZoomSegment(start: begin, end: end, scale: scale, center: point, follow: !cursor.isEmpty))
             }
         }
-        return ZoomPlan(segments: segments)
+        return ZoomPlan(segments: segments, cursor: cursor)
+    }
+
+    /// Where the pointer was at `t` (the last sample at or before it).
+    private func pointer(at t: Double) -> CGPoint? {
+        guard let first = cursor.first else { return nil }
+        if t <= first.t { return CGPoint(x: first.x, y: first.y) }
+        var low = 0, high = cursor.count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if cursor[mid].t <= t { low = mid } else { high = mid - 1 }
+        }
+        return CGPoint(x: cursor[low].x, y: cursor[low].y)
+    }
+
+    /// The pointer averaged over about 0.8 s around `t`, weighted toward `t`, so the camera glides.
+    func smoothedPointer(at t: Double) -> CGPoint? {
+        guard !cursor.isEmpty else { return nil }
+        var sum = CGPoint.zero, weights = 0.0
+        for k in -8...8 {
+            guard let p = pointer(at: t + Double(k) * 0.05) else { continue }
+            let w = 9 - Double(abs(k))
+            sum.x += p.x * w; sum.y += p.y * w; weights += w
+        }
+        return weights > 0 ? CGPoint(x: sum.x / weights, y: sum.y / weights) : nil
     }
 
     /// Magnification and centre at time `t`.
@@ -58,7 +87,8 @@ struct ZoomPlan: Equatable {
             progress = 1
         }
         let eased = progress * progress * (3 - 2 * progress) // smoothstep
-        return (1 + (segment.scale - 1) * eased, segment.center)
+        let center = segment.follow ? (smoothedPointer(at: t) ?? segment.center) : segment.center
+        return (1 + (segment.scale - 1) * eased, center)
     }
 
     /// The source rectangle (0…1, top-left origin) shown at time `t`.

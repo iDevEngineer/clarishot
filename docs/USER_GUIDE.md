@@ -168,6 +168,8 @@ History's right-click menu). Clarishot noted every click you made while recordin
   ends to change its length, double-click empty space to add one.
 - **Select a zoom** to set how far it zooms (1.25× to 3.5×) and to aim it: the preview shows the
   whole frame with the zoomed area outlined; click or drag to move it.
+- **Follow cursor** (on for automatic zooms) pans the zoom smoothly after the pointer; the preview
+  draws the path it will follow. Clicking to aim switches it off and holds the zoom still.
 - **Play** (Space) shows the finished result. **Auto Zoom** puts back the zooms from your clicks.
 - **Export** makes a new movie with the zooms and shows it on a preview card. The original stays
   as it was.
