@@ -44,6 +44,7 @@ final class CameraBubble: NSPanel {
         preview.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         view.layer?.insertSublayer(preview, at: 0)
         view.onClick = { [weak self] in self?.toggleFullScreen() }
+        view.canDrag = { [weak self] in self?.normalFrame == nil }
         contentView = view
         applyShape()
     }
@@ -105,28 +106,33 @@ final class CameraBubble: NSPanel {
     /// Drag to move; a click without moving toggles full screen.
     private final class CameraView: NSView {
         var onClick: (() -> Void)?
-        private var start: CGPoint?
+        /// Full screen: no dragging, so any click goes back to the bubble.
+        var canDrag: () -> Bool = { true }
+        private var pressPoint: CGPoint?
+        private var windowOrigin: CGPoint = .zero
         private var moved = false
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
         override func mouseDown(with event: NSEvent) {
-            start = NSEvent.mouseLocation
+            pressPoint = NSEvent.mouseLocation
+            windowOrigin = window?.frame.origin ?? .zero
             moved = false
         }
 
         override func mouseDragged(with event: NSEvent) {
-            guard let window, let start else { return }
+            guard let window, let pressPoint, canDrag() else { return }
             let now = NSEvent.mouseLocation
-            let dx = now.x - start.x, dy = now.y - start.y
-            if abs(dx) + abs(dy) > 2 { moved = true }
-            window.setFrameOrigin(CGPoint(x: window.frame.minX + dx, y: window.frame.minY + dy))
-            self.start = now
+            let dx = now.x - pressPoint.x, dy = now.y - pressPoint.y
+            // Measured from the press, so trackpad jitter doesn't count as a drag.
+            if !moved && hypot(dx, dy) < 5 { return }
+            moved = true
+            window.setFrameOrigin(CGPoint(x: windowOrigin.x + dx, y: windowOrigin.y + dy))
         }
 
         override func mouseUp(with event: NSEvent) {
             if !moved { onClick?() }
-            start = nil
+            pressPoint = nil
         }
     }
 }
