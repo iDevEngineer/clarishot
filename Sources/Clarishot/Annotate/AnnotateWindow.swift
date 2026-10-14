@@ -398,7 +398,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
                                                      tips: order.map(\.title)) { [weak self] i in
                 self?.canvas.arrowType = order[i]
                 self?.applyToSelection()
-                self?.refreshProperties()
+                DispatchQueue.main.async { self?.refreshProperties() }
             }]))
             let classic = look == .classic
             let start = segmented(Self.headImages(pointingRight: false), selected: (selected?.startEnd ?? canvas.startHead).rawValue,
@@ -489,7 +489,11 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         control.segmentStyle = .automatic
         control.selectedSegment = selected
         for (i, tip) in tips.enumerated() where i < control.segmentCount { control.setToolTip(tip, forSegment: i) }
-        bind(control) { [weak control] in change(control?.selectedSegment ?? 0) }
+        // Read the choice from the control that sent the click (never default to the first option).
+        bindSender(control) { sender in
+            guard let segment = (sender as? NSSegmentedControl)?.selectedSegment, segment >= 0 else { return }
+            change(segment)
+        }
         return control
     }
 
@@ -503,7 +507,14 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     }
 
     private func bind(_ control: NSControl, _ action: @escaping () -> Void) {
-        let target = Callback { _ in action() }
+        bindSender(control) { _ in action() }
+    }
+
+    private func bindSender(_ control: NSControl, _ action: @escaping (Any?) -> Void) {
+        let target = Callback { sender in
+            // Rebuild the bar after the click has finished, not while the clicked control is still handling it.
+            action(sender)
+        }
         propertyTargets.append(target)
         control.target = target
         control.action = #selector(Callback.fire(_:))
