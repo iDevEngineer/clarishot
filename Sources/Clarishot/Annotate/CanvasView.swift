@@ -54,7 +54,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     /// The selected arrow or line, if any — these show draggable end handles.
     private var selectedLineIndex: Int? {
         guard let index = selectedIndex, document.annotations.indices.contains(index),
-              [.arrow, .line].contains(document.annotations[index].tool) else { return nil }
+              [.arrow, .line, .highlighter].contains(document.annotations[index].tool) else { return nil }
         return index
     }
 
@@ -70,8 +70,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         guard let index = selectedLineIndex else { return nil }
         let a = document.annotations[index]
         func near(_ p: CGPoint) -> Bool { hypot(toView(p).x - viewPoint.x, toView(p).y - viewPoint.y) <= 11 }
-        if near(a.end) { return (index, false) }
-        if near(a.start) { return (index, true) }
+        if near(a.handleEnd) { return (index, false) }
+        if near(a.handleStart) { return (index, true) }
         return nil
     }
     private var lastDragPoint: CGPoint?
@@ -226,7 +226,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
                 NSColor.white.setFill(); diamond.fill()
                 NSColor.controlAccentColor.setStroke(); diamond.lineWidth = 2; diamond.stroke()
             }
-            for point in [a.start, a.end] {
+            if a.tool == .highlighter {
+                // Light outline so you can see what's selected, plus the two end handles.
+                let outline = NSBezierPath(roundedRect: toView(a.bounds), xRadius: 4, yRadius: 4)
+                outline.lineWidth = 1
+                outline.setLineDash([4, 3], count: 2, phase: 0)
+                NSColor.controlAccentColor.withAlphaComponent(0.6).setStroke()
+                outline.stroke()
+            }
+            for point in [a.handleStart, a.handleEnd] {
                 let c = toView(point)
                 let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12))
                 NSColor.controlAccentColor.setFill()
@@ -349,9 +357,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         if let handle = draggingEnd, document.annotations.indices.contains(handle.index) {
             if !movedSinceMouseDown { document.checkpoint(); movedSinceMouseDown = true }
             var a = document.annotations[handle.index]
-            let anchor = handle.isStart ? a.end : a.start
-            if shift { p = constrained(p, from: anchor, tool: a.tool) }
-            a.setEnd(p, isStart: handle.isStart)
+            let anchor = handle.isStart ? a.handleEnd : a.handleStart
+            if shift { p = constrained(p, from: anchor, tool: a.tool == .highlighter ? .line : a.tool) }
+            a.moveHandle(isStart: handle.isStart, to: p)
             document.annotations[handle.index] = a
             needsDisplay = true
             return

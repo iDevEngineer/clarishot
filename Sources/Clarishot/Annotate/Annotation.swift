@@ -215,6 +215,30 @@ struct Annotation {
         return CGPoint(x: mid.x - dy * 0.3, y: mid.y + dx * 0.3)
     }
 
+    /// Where the draggable end handles sit: a highlight's first and last points, otherwise start/end.
+    var handleStart: CGPoint { tool == .highlighter ? (points.first ?? start) : start }
+    var handleEnd: CGPoint { tool == .highlighter ? (points.last ?? end) : end }
+
+    /// Drags one end handle. Highlights stretch (and turn) their whole stroke about the other end,
+    /// so a freehand highlight keeps its shape; arrows and lines just move that end.
+    mutating func moveHandle(isStart: Bool, to point: CGPoint) {
+        guard tool == .highlighter, points.count >= 2 else { return setEnd(point, isStart: isStart) }
+        let anchor = isStart ? handleEnd : handleStart
+        let old = isStart ? handleStart : handleEnd
+        let from = CGVector(dx: old.x - anchor.x, dy: old.y - anchor.y)
+        let to = CGVector(dx: point.x - anchor.x, dy: point.y - anchor.y)
+        let fromLength = max(hypot(from.dx, from.dy), 0.001)
+        let scale = hypot(to.dx, to.dy) / fromLength
+        let angle = atan2(to.dy, to.dx) - atan2(from.dy, from.dx)
+        let cosA = cos(angle) * scale, sinA = sin(angle) * scale
+        points = points.map { p in
+            let dx = p.x - anchor.x, dy = p.y - anchor.y
+            return CGPoint(x: anchor.x + dx * cosA - dy * sinA, y: anchor.y + dx * sinA + dy * cosA)
+        }
+        start = points.first ?? start
+        end = points.last ?? end
+    }
+
     /// Moves one end, keeping a custom curve's shape relative to the arrow.
     mutating func setEnd(_ point: CGPoint, isStart: Bool) {
         let offset = control.map { CGVector(dx: $0.x - defaultCurveControl.x, dy: $0.y - defaultCurveControl.y) }
