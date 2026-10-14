@@ -476,12 +476,17 @@ final class GeneralPane: SettingsPane {
                 note: "You can set a custom wallpaper to hide desktop icons in Wallpaper settings.")
         ])
         let sounds = CaptureSound.choices
+        let shutter = popup(["System Default"] + sounds, selected: (sounds.firstIndex(of: s.shutterSound) ?? -1) + 1) {
+            s.shutterSound = $0 == 0 ? "" : sounds[$0 - 1]
+            CaptureSound.play()
+        }
+        shutter.isEnabled = s.playSounds // greyed out while sounds are off, like the reference
         section("Sounds", [
-            row("Play sounds", toggle({ s.playSounds }, { s.playSounds = $0 })),
-            row("Shutter sound", popup(["System Default"] + sounds, selected: (sounds.firstIndex(of: s.shutterSound) ?? -1) + 1) {
-                s.shutterSound = $0 == 0 ? "" : sounds[$0 - 1]
-                CaptureSound.play()
-            })
+            row("Play sounds", toggle({ s.playSounds }, { on in
+                s.playSounds = on
+                shutter.isEnabled = on
+            })),
+            row("Shutter sound", shutter)
         ])
 
         updateFolderLabel()
