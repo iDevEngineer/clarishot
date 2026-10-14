@@ -5,8 +5,12 @@ import AppKit
 final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private static var openControllers: [AnnotateWindowController] = []
 
-    static func open(_ capture: Capture) {
+    /// `onDone`: opened by "Capture & Annotate" — a Done button sends the edited capture on
+    /// to the usual after-capture actions (preview card, copy, save…).
+    static func open(_ capture: Capture, onDone: ((Capture) -> Void)? = nil) {
         let controller = AnnotateWindowController(capture: capture)
+        controller.onDone = onDone
+        if onDone != nil { controller.addDoneButton() }
         openControllers.append(controller)
         let settings = Settings.shared
         if settings.annotateShowDockIcon { NSApp.setActivationPolicy(.regular) }
@@ -35,8 +39,27 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private let redoButton = ToolButton(symbol: "arrow.uturn.forward", tip: "Redo (⇧⌘Z)")
     private let backgroundButton = ToolButton(symbol: "photo.artframe", tip: "Background")
     private let styleButton = ToolButton(symbol: "paintbrush", tip: "Style: arrow, text and crop shape")
-    private let imageButton = ToolButton(symbol: "rotate.right", tip: "Rotate or flip")
+    private let imageButton = ToolButton(symbol: "wand.and.stars", tip: "Image: rotate, flip, remove background, hide sensitive info")
     private var popover: NSPopover?
+    private var onDone: ((Capture) -> Void)?
+    private var actionsStack: NSStackView?
+
+    private func addDoneButton() {
+        let done = NSButton(title: "Done", target: self, action: #selector(doneEditing))
+        done.bezelStyle = .rounded
+        done.bezelColor = .controlAccentColor
+        done.keyEquivalent = "\r"
+        actionsStack?.addArrangedSubview(done)
+    }
+
+    @objc private func doneEditing() {
+        canvas.commitText()
+        guard let result = document.rendered() else { return }
+        let callback = onDone
+        onDone = nil
+        window.close()
+        callback?(result.from(document.capture.sourceBundleID))
+    }
 
     private init(capture: Capture) {
         document = AnnotateDocument(capture: capture)
@@ -102,6 +125,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         let actions = NSStackView(views: [backgroundButton, imageButton, separator(), styleButton, colorButton, widthButton,
                                           separator(), undoButton, redoButton, separator(), copy, save])
         actions.spacing = 4
+        actionsStack = actions
 
         tools.translatesAutoresizingMaskIntoConstraints = false
         actions.translatesAutoresizingMaskIntoConstraints = false
@@ -221,6 +245,29 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
                 self.refreshUndo()
             })
         }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: "Remove Background") { [weak self] in
+            guard let self else { return }
+            self.canvas.commitText()
+            Task {
+                if await self.document.removeBackground() {
+                    self.canvas.refresh()
+                    self.refreshUndo()
+                } else {
+                    Toast.show("No clear subject found to cut out")
+                }
+            }
+        })
+        menu.addItem(ClosureMenuItem(title: "Hide Sensitive Info") { [weak self] in
+            guard let self else { return }
+            self.canvas.commitText()
+            Task {
+                let count = await self.document.hideSensitiveInfo()
+                self.canvas.refresh()
+                self.refreshUndo()
+                Toast.show(count == 0 ? "No sensitive info found" : "Hid \(count) item\(count == 1 ? "" : "s")")
+            }
+        })
         menu.addItem(.separator())
         let note = NSMenuItem(title: "Drawings are merged into the image first", action: nil, keyEquivalent: "")
         note.isEnabled = false

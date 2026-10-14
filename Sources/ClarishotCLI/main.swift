@@ -85,6 +85,8 @@ clarishot: control Clarishot from the terminal or an AI tool.
       --area X,Y,W,H                  Points, top-left origin
       --window ID | --app NAME        One window
       --interactive                   Let you drag an area
+      --smart                         Let you click one element of an app
+      --cutout                        Cut out the subject of an area (with --area, or drag)
       --show                          Also show it in Clarishot (preview, after-capture actions)
   clarishot ocr [--path FILE | --area X,Y,W,H | --interactive]   Print the text it reads
   clarishot history [--limit N] [--kind screenshot|recording|gif]
@@ -112,6 +114,8 @@ func captureParams(_ args: [String]) throws -> [String: Any] {
     if let id = value(after: "--window", in: args).flatMap(Int.init) { p = ["mode": "window", "window_id": id] }
     if let app = value(after: "--app", in: args) { p = ["mode": "window", "app": app] }
     if args.contains("--interactive") { p = ["mode": "interactive"] }
+    if args.contains("--smart") { p = ["mode": "smart"] }
+    if args.contains("--cutout") { p["mode"] = "cutout" }
     if args.contains("--fullscreen") || p.isEmpty { p["mode"] = p["mode"] ?? "fullscreen" }
     if let display = value(after: "--display", in: args).flatMap(Int.init) { p["display"] = display }
     return p
@@ -181,8 +185,8 @@ final class MCPServer {
         tool("list_windows", "List visible app windows with id, app name, title and frame (points, top-left origin).",
              ["app": ["type": "string", "description": "Only windows whose app name or bundle id contains this"]]),
         tool("take_screenshot",
-             "Take a screenshot with Clarishot. Returns the saved PNG path and the image. mode: fullscreen (default), area (x, y, width, height in points, top-left origin), window (window_id from list_windows, or app name), or interactive (the user drags an area).",
-             ["mode": ["type": "string", "enum": ["fullscreen", "area", "window", "interactive"]],
+             "Take a screenshot with Clarishot. Returns the saved PNG path and the image. mode: fullscreen (default), area (x, y, width, height in points, top-left origin), window (window_id from list_windows, or app name), interactive (the user drags an area), smart (the user clicks one UI element, e.g. a button or panel), or cutout (the subject of an area with its background removed; uses x/y/width/height if given, otherwise the user drags).",
+             ["mode": ["type": "string", "enum": ["fullscreen", "area", "window", "interactive", "smart", "cutout"]],
               "display": ["type": "integer", "description": "Screen index for fullscreen"],
               "x": ["type": "number"], "y": ["type": "number"], "width": ["type": "number"], "height": ["type": "number"],
               "window_id": ["type": "integer"], "app": ["type": "string"],

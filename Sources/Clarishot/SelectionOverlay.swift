@@ -14,7 +14,7 @@ enum SelectionMode {
 
 /// What to do with an All-In-One selection.
 enum AllInOneAction {
-    case screenshot, fullscreen, window, scrolling, timer, text, record
+    case screenshot, fullscreen, window, smart, scrolling, timer, text, record
 }
 
 enum SelectionResult {
@@ -777,7 +777,8 @@ final class AllInOneBar: NSView, NSTextFieldDelegate {
         // Same icons as the menu-bar items they stand for.
         let modes: [(String, String, AllInOneAction)] = [
             ("Area", "viewfinder", .screenshot), ("Fullscreen", "display", .fullscreen),
-            ("Window", "macwindow", .window), ("Scrolling", "arrow.down", .scrolling), ("Timer", "timer", .timer)
+            ("Window", "macwindow", .window), ("Smart", "cursorarrow.rays", .smart),
+            ("Scrolling", "arrow.down", .scrolling), ("Timer", "timer", .timer)
         ]
         var left: [NSView] = modes.map { title, symbol, action in
             ModeButton(title: title, symbol: symbol) { [weak self] in self?.onAction?(action) }

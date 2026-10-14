@@ -473,6 +473,33 @@ final class AnnotateDocument {
         crop = CGRect(origin: .zero, size: imageSize)
     }
 
+    /// Flattens the drawing, then lifts the subject off its background (undoable).
+    /// Returns false if no clear subject was found.
+    func removeBackground() async -> Bool {
+        guard let flat = AnnotationRenderer.render(base: baseImage, scale: capture.scale, imageSize: imageSize,
+                                                   crop: crop, annotations: annotations, effects: effects),
+              let cut = await BackgroundRemover.removeBackgroundAsync(flat) else { return false }
+        checkpoint()
+        setBase(cut)
+        annotations = []
+        crop = CGRect(origin: .zero, size: imageSize)
+        return true
+    }
+
+    /// Covers text that looks private (emails, keys, card numbers…) with pixelate boxes (undoable).
+    /// Returns how many were hidden.
+    func hideSensitiveInfo() async -> Int {
+        let matches = await SensitiveDataFinder.findAsync(in: baseImage, pointSize: imageSize)
+        guard !matches.isEmpty else { return 0 }
+        checkpoint()
+        for match in matches {
+            annotations.append(Annotation(tool: .pixelate, start: CGPoint(x: match.rect.minX, y: match.rect.minY),
+                                          end: CGPoint(x: match.rect.maxX, y: match.rect.maxY),
+                                          color: .black, lineWidth: 4))
+        }
+        return matches.count
+    }
+
     private func setBase(_ image: CGImage) {
         baseImage = image
         imageSize = CGSize(width: CGFloat(image.width) / capture.scale, height: CGFloat(image.height) / capture.scale)

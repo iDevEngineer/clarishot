@@ -144,8 +144,34 @@ enum AgentAPI {
                 }
             }
 
+        case "smart":
+            NSApp.activate(ignoringOtherApps: true)
+            let (screen, rect, bundle) = try await withCheckedThrowingContinuation { continuation in
+                SmartCaptureController.shared.start { result in
+                    switch result {
+                    case .success(let value): continuation.resume(returning: value)
+                    case .failure: continuation.resume(throwing: AgentError("Smart Capture was cancelled or needs Accessibility permission"))
+                    }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            let shots = try await ScreenCapturer.captureAllScreens()
+            guard let shot = shots.first(where: { $0.screen == screen }), let image = ScreenCapturer.crop(shot, to: rect) else {
+                throw AgentError("Could not capture that element")
+            }
+            return Capture(image: image, scale: screen.backingScaleFactor).from(bundle)
+
+        case "cutout":
+            var area = p
+            area["mode"] = p["x"] != nil ? "area" : "interactive"
+            let source = try await self.image(mode: area["mode"] as! String, area) // swiftlint:disable:this force_cast
+            guard let cut = await BackgroundRemover.removeBackgroundAsync(source.image) else {
+                throw AgentError("No clear subject found to cut out")
+            }
+            return Capture(image: cut, scale: source.scale).from(source.sourceBundleID)
+
         default:
-            throw AgentError("mode must be fullscreen, area, window or interactive")
+            throw AgentError("mode must be fullscreen, area, window, interactive, smart or cutout")
         }
     }
 

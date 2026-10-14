@@ -45,6 +45,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                                action: #selector(capturePreviousArea), shortcut: .capturePreviousArea)
         add(menu, "Capture Fullscreen", symbol: "display", action: #selector(captureFullscreen), shortcut: .captureFullscreen)
         add(menu, "Capture Window", symbol: "macwindow", action: #selector(captureWindow), shortcut: .captureWindow)
+        add(menu, "Smart Capture", symbol: "cursorarrow.rays", action: #selector(smartCapture), shortcut: .smartCapture)
+        add(menu, "Capture Object", symbol: "scissors", action: #selector(objectCutout),
+            shortcut: .objectCutout)
+        add(menu, "Capture & Annotate", symbol: "pencil.and.outline", action: #selector(captureAndAnnotate),
+            shortcut: .captureAreaAnnotate)
         add(menu, "Scrolling Capture", symbol: "arrow.down", action: #selector(scrollingCapture), shortcut: .scrollingCapture)
         add(menu, "Self-Timer", symbol: "timer", action: #selector(selfTimer), shortcut: .selfTimer)
         add(menu, "Capture Text (OCR)", symbol: "textformat", action: #selector(captureText), shortcut: .captureText)
@@ -109,6 +114,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func capturePreviousArea() { CaptureCoordinator.shared.capturePreviousArea() }
     @objc private func captureFullscreen() { CaptureCoordinator.shared.captureFullscreen() }
     @objc private func captureWindow() { CaptureCoordinator.shared.captureWindow() }
+    @objc private func smartCapture() { CaptureCoordinator.shared.captureSmart() }
+    @objc private func objectCutout() { CaptureCoordinator.shared.captureCutout() }
+    @objc private func captureAndAnnotate() { CaptureCoordinator.shared.captureAndAnnotate() }
     @objc private func captureText() { CaptureCoordinator.shared.captureText() }
     @objc private func scrollingCapture() { ScrollCaptureCoordinator.shared.start() }
     @objc private func toggleDesktopIcons() { DesktopIconHider.shared.toggle() }

@@ -96,6 +96,8 @@ final class CaptureCoordinator {
                         self.captureFullscreen()
                     case .window:
                         self.captureWindow()
+                    case .smart:
+                        self.captureSmart()
                     }
                 }
             } catch {
@@ -188,6 +190,48 @@ final class CaptureCoordinator {
             } catch {
                 showCaptureError(error)
             }
+        }
+    }
+
+    /// Smart Capture: hover an element of any app, click to capture just that element.
+    func captureSmart() {
+        SmartCaptureController.shared.start { [weak self] result in
+            guard let self, case let .success((screen, rect, bundle)) = result else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 120_000_000) // let the outline leave the screen
+                do {
+                    let shots = try await ScreenCapturer.captureAllScreens()
+                    guard let shot = shots.first(where: { $0.screen == screen }),
+                          let image = ScreenCapturer.crop(shot, to: rect) else { return }
+                    self.lastArea = (ScreenCapturer.displayID(for: screen), rect)
+                    self.deliver(Capture(image: image, scale: screen.backingScaleFactor).from(bundle))
+                } catch {
+                    self.showCaptureError(error)
+                }
+            }
+        }
+    }
+
+    /// Object cutout: select an area, keep only its main subject on a transparent background.
+    func captureCutout() {
+        selectRegion(hint: "Drag around the object to cut out.") { [weak self] shot, rect in
+            guard let self, let image = ScreenCapturer.crop(shot, to: rect) else { return }
+            Task {
+                guard let cut = await BackgroundRemover.removeBackgroundAsync(image) else {
+                    Toast.show("No clear subject found to cut out")
+                    return
+                }
+                self.deliver(Capture(image: cut, scale: shot.screen.backingScaleFactor)
+                    .from(SourceApp.under(rect, on: shot.screen)))
+            }
+        }
+    }
+
+    /// Capture & Annotate: select an area and edit it before anything is saved or copied;
+    /// Done then runs the normal after-capture actions.
+    func captureAndAnnotate() {
+        selectArea { [weak self] capture in
+            AnnotateWindowController.open(capture) { edited in self?.deliver(edited) }
         }
     }
 

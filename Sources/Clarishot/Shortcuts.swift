@@ -42,7 +42,8 @@ enum ShortcutAction: String, CaseIterable {
     case allInOne, captureArea, capturePreviousArea, captureFullscreen, captureWindow, scrollingCapture, selfTimer,
          captureText, recordScreen, pauseRecording,
          toggleDesktopIcons, openHistory, restoreLastCapture,
-         captureAreaCopy, captureAreaSave, captureAreaAnnotate, captureAreaPin
+         captureAreaCopy, captureAreaSave, captureAreaAnnotate, captureAreaPin,
+         smartCapture, objectCutout
 
     var title: String {
         switch self {
@@ -63,6 +64,8 @@ enum ShortcutAction: String, CaseIterable {
         case .captureAreaSave: return "Capture Area & Save"
         case .captureAreaAnnotate: return "Capture Area & Annotate"
         case .captureAreaPin: return "Capture Area & Pin to the Screen"
+        case .smartCapture: return "Smart Capture"
+        case .objectCutout: return "Capture Object (Cutout)"
         }
     }
 
@@ -80,8 +83,11 @@ enum ShortcutAction: String, CaseIterable {
         case .captureText: return Shortcut(key: "2", keyCode: UInt32(kVK_ANSI_2), modifiers: m)
         case .recordScreen: return Shortcut(key: "r", keyCode: UInt32(kVK_ANSI_R), modifiers: m)
         case .pauseRecording: return Shortcut(key: "p", keyCode: UInt32(kVK_ANSI_P), modifiers: m)
+        case .smartCapture: return Shortcut(key: "e", keyCode: UInt32(kVK_ANSI_E), modifiers: m)
+        case .objectCutout: return Shortcut(key: "1", keyCode: UInt32(kVK_ANSI_1), modifiers: m)
+        case .captureAreaAnnotate: return Shortcut(key: "7", keyCode: UInt32(kVK_ANSI_7), modifiers: m)
         case .toggleDesktopIcons, .openHistory, .restoreLastCapture,
-             .captureAreaCopy, .captureAreaSave, .captureAreaAnnotate, .captureAreaPin: return nil
+             .captureAreaCopy, .captureAreaSave, .captureAreaPin: return nil
         }
     }
 
@@ -104,7 +110,9 @@ enum ShortcutAction: String, CaseIterable {
         case .restoreLastCapture: PreviewManager.shared.restoreRecentlyClosed()
         case .captureAreaCopy: c.captureArea(then: .copy)
         case .captureAreaSave: c.captureArea(then: .save)
-        case .captureAreaAnnotate: c.captureArea(then: .annotate)
+        case .captureAreaAnnotate: c.captureAndAnnotate()
+        case .smartCapture: c.captureSmart()
+        case .objectCutout: c.captureCutout()
         case .captureAreaPin: c.captureArea(then: .pin)
         }
     }
