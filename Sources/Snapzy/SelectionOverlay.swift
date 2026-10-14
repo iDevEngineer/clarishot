@@ -1,4 +1,7 @@
 import AppKit
+import os
+
+private let overlayLog = Logger(subsystem: "com.scottmackey.snapzy", category: "selection")
 
 enum SelectionMode {
     case area
@@ -56,8 +59,13 @@ final class SelectionOverlayController {
         }
     }
 
+    private var keyTap: KeyTap?
+
     func show() {
         NSApp.activate(ignoringOtherApps: true)
+        // Keys may still go to the app behind (macOS doesn't always let us become active),
+        // so catch Space, Esc and Return system-wide while the overlay is up.
+        keyTap = KeyTap { [weak self] keyCode, isDown in self?.handleKey(keyCode, isDown: isDown) ?? false }
         for window in windows { window.orderFrontRegardless() }
         let mouse = NSEvent.mouseLocation
         let keyWindow = windows.first { $0.frame.contains(mouse) } ?? windows.first
@@ -66,10 +74,32 @@ final class SelectionOverlayController {
         CrosshairCursor.shared.set()
     }
 
+    /// Returns true if the key was used (and should not reach other apps).
+    private func handleKey(_ keyCode: Int64, isDown: Bool) -> Bool {
+        let views = windows.compactMap { $0.contentView as? OverlayView }
+        switch keyCode {
+        case 49: // space: move the box while dragging
+            views.forEach { $0.setSpaceHeld(isDown) }
+            return true
+        case 53: // esc
+            if isDown { finish(nil) }
+            return true
+        case 36, 76: // return, enter
+            if isDown { return views.contains { $0.pressReturn() } }
+            return false
+        default:
+            return false
+        }
+    }
+
     private func finish(_ result: SelectionResult?) {
         guard !finished else { return }
         finished = true
-        for window in windows { window.orderOut(nil) }
+        keyTap = nil
+        for window in windows {
+            (window.contentView as? OverlayView)?.stopWatchingKeys()
+            window.orderOut(nil)
+        }
         windows.removeAll()
         previousApp?.activate()
         completion(result)
@@ -107,8 +137,31 @@ final class OverlayView: NSView {
 
     private var interaction: Interaction = .none
     /// Holding Space while dragging out an area moves the whole box instead of resizing it.
-    private var spaceHeld = false
+    private var spaceHeld = false {
+        didSet { if spaceHeld != oldValue { overlayLog.notice("space held: \(self.spaceHeld, privacy: .public)") } }
+    }
     private var lastDragPoint: CGPoint?
+    private var keyMonitor: Any?
+
+    /// Watches Space at the app level, so it's seen even mid-drag (before any window handles it).
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil, keyMonitor == nil {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard event.keyCode == 49 else { return event }
+                let down = event.type == .keyDown
+                MainActor.assumeIsolated { self?.spaceHeld = down }
+                return nil
+            }
+        } else if window == nil {
+            stopWatchingKeys()
+        }
+    }
+
+    func stopWatchingKeys() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+    }
     /// Modes where the selection stays on screen to be moved and resized.
     private var editable: Bool { mode == .allInOne || mode == .scrollArea }
     private var startBar: ScrollStartBar?
@@ -203,8 +256,6 @@ final class OverlayView: NSView {
         case .none:
             return
         case .drawing(var start):
-            // Read the Space key's state directly: key presses don't reliably reach us mid-drag.
-            spaceHeld = CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(49))
             if spaceHeld, let last = lastDragPoint, let current = selection {
                 // Move the box (and its anchor corner) with the mouse, kept on screen.
                 var dx = point.x - last.x, dy = point.y - last.y
@@ -212,7 +263,8 @@ final class OverlayView: NSView {
                 dy = min(max(dy, -current.minY), bounds.maxY - current.maxY)
                 start = CGPoint(x: start.x + dx, y: start.y + dy)
                 interaction = .drawing(start: start)
-                selection = current.offsetBy(dx: dx, dy: dy).integral
+                // Move without rounding: rounding outward on every step made the box grow.
+                selection = current.offsetBy(dx: dx, dy: dy)
             } else {
                 var rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
                                   width: abs(point.x - start.x), height: abs(point.y - start.y))
@@ -221,9 +273,9 @@ final class OverlayView: NSView {
             }
         case .moving(let grab, let original):
             var rect = original.offsetBy(dx: point.x - grab.x, dy: point.y - grab.y)
-            rect.origin.x = min(max(rect.minX, 0), bounds.maxX - rect.width)
-            rect.origin.y = min(max(rect.minY, 0), bounds.maxY - rect.height)
-            selection = rect.integral
+            rect.origin.x = min(max(rect.minX, 0), bounds.maxX - rect.width).rounded()
+            rect.origin.y = min(max(rect.minY, 0), bounds.maxY - rect.height).rounded()
+            selection = rect
         case .resizing(let handle, let original):
             selection = resized(original, handle: handle, to: point).integral
         }
@@ -231,6 +283,10 @@ final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let rect = selection {
+            selection = CGRect(x: rect.minX.rounded(), y: rect.minY.rounded(),
+                               width: rect.width.rounded(), height: rect.height.rounded())
+        }
         defer {
             interaction = .none
             spaceHeld = false
@@ -261,21 +317,24 @@ final class OverlayView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 49: // space: move the box while dragging
-            if case .drawing = interaction { spaceHeld = true }
         case 53: onFinish?(nil)
         case 36 where editable, 76 where editable: perform(mode == .scrollArea ? .scrolling : .screenshot)
         default: super.keyDown(with: event)
         }
     }
 
-    override func keyUp(with event: NSEvent) {
-        if event.keyCode == 49 { spaceHeld = false } else { super.keyUp(with: event) }
-    }
-
     override func cancelOperation(_ sender: Any?) { onFinish?(nil) }
 
     // MARK: All-In-One
+
+    func setSpaceHeld(_ held: Bool) { spaceHeld = held }
+
+    /// Return in All-In-One / scrolling selection; false if there's nothing to confirm.
+    func pressReturn() -> Bool {
+        guard editable, selection != nil else { return false }
+        perform(mode == .scrollArea ? .scrolling : .screenshot)
+        return true
+    }
 
     private func perform(_ action: AllInOneAction) {
         guard let rect = selection, rect.width >= 4, rect.height >= 4 else { return }
@@ -778,6 +837,46 @@ final class PillLabelButton: NSView {
         let base = light ? NSColor.white : NSColor.black.withAlphaComponent(0.72)
         let down = light ? NSColor(white: 0.88, alpha: 1) : NSColor.black.withAlphaComponent(0.85)
         layer?.backgroundColor = (pressed ? down : base).cgColor
+    }
+}
+
+/// Intercepts key presses for the whole system while it exists (needs Accessibility).
+/// The handler returns true to swallow a key so it doesn't reach the app behind.
+/// Without permission it does nothing; the overlay's own key handling still applies.
+@MainActor
+final class KeyTap {
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+    private let handler: (Int64, Bool) -> Bool
+
+    init(handler: @escaping (Int64, Bool) -> Bool) {
+        self.handler = handler
+        guard AXIsProcessTrusted() else {
+            overlayLog.notice("key tap: no Accessibility permission")
+            return
+        }
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                          eventsOfInterest: mask, callback: { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { return Unmanaged.passUnretained(event) }
+            let me = Unmanaged<KeyTap>.fromOpaque(refcon).takeUnretainedValue()
+            let code = event.getIntegerValueField(.keyboardEventKeycode)
+            let swallow = MainActor.assumeIsolated { me.handler(code, type == .keyDown) }
+            return swallow ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: refcon) else { return }
+        self.tap = tap
+        let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        self.source = source
+        CGEvent.tapEnable(tap: tap, enable: true)
+        overlayLog.notice("key tap: active")
+    }
+
+    deinit {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
     }
 }
 
