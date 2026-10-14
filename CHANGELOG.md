@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Editor layout: Add screenshot, canvas lock, zoom, Drag Me, share, pin, undo and redo buttons.
 - Background tool is now a left sidebar: presets, gradients, wallpapers (add your own), blurred
   wallpapers, plain colours, padding, inset, shadow, corners, alignment and ratio.
+- 20 soft multi-colour "mesh" gradient backgrounds.
 
 ### Fixed
 - Curved tapered arrows now taper from a thin tail to a thick head.

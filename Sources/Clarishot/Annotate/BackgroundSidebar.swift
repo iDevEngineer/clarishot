@@ -121,8 +121,8 @@ final class BackgroundSidebarView: NSView {
         none.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
         // Gradients
-        let gradients = BackgroundFill.gradients.enumerated().map { index, pair in
-            tile(.gradient(pair.0, pair.1), spec: "gradient:\(index)")
+        let gradients = MeshBackground.designs.indices.map { index in
+            tile(.mesh(index), spec: "mesh:\(index)")
         }
         let shown = showAllGradients ? gradients : Array(gradients.prefix(10))
         let toggle = linkButton(showAllGradients ? "Show less ⌃" : "Show more ⌄") { [weak self] in

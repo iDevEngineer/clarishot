@@ -10,6 +10,8 @@ enum BackgroundFill {
     case picture(URL)
     /// The wallpaper, blurred: 0 soft, 1 frosted dark, 2 dim.
     case blurredWallpaper(Int)
+    /// One of the soft multi-colour designs in `MeshBackground`.
+    case mesh(Int)
 
     /// The sidebar's gradients, defined in OKLCH (the first ten show before "Show more").
     static let gradients: [(NSColor, NSColor)] = [
@@ -119,6 +121,9 @@ enum BackgroundFill {
             ctx.restoreGState()
         case .picture(let url):
             guard let image = Self.pictureImage(url) else { return BackgroundFill.presets[1].fill(rect, in: ctx, flipped: flipped) }
+            Self.drawFilled(image, rect, ctx, flipped: flipped)
+        case .mesh(let index):
+            guard let image = MeshBackground.image(index) else { return }
             Self.drawFilled(image, rect, ctx, flipped: flipped)
         case .blurredWallpaper(let variant):
             guard let image = Self.blurredWallpaper(variant) else { return BackgroundFill.presets[5].fill(rect, in: ctx, flipped: flipped) }
@@ -240,7 +245,7 @@ struct BackgroundStyle: Codable, Equatable {
     var customFrom: String?
     var customTo: String?
     /// Sidebar choice, overriding the older fields: "gradient:N", "solid:<P3>", "wallpaper",
-    /// "picture:<path>" or "blur:N".
+    /// "picture:<path>", "blur:N" or "mesh:N".
     var fillSpec: String?
     /// Border of the screenshot's own edge colour around it, in points.
     var inset: CGFloat?
@@ -264,6 +269,7 @@ struct BackgroundStyle: Codable, Equatable {
             case "wallpaper": return .wallpaper
             case "picture": return .picture(URL(fileURLWithPath: parts.last ?? ""))
             case "blur": return .blurredWallpaper(Int(parts.last ?? "") ?? 0)
+            case "mesh": return .mesh(Int(parts.last ?? "") ?? 0)
             default: break
             }
         }
