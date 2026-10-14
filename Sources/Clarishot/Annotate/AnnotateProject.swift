@@ -63,6 +63,41 @@ struct AnnotateProject: Codable {
     var background: BackgroundStyle
     var annotations: [AnnotationRecord]
     var sourceBundleID: String?
+    /// A custom background picture, embedded so the project never refers to files by path.
+    var backgroundPicture: Data?
+
+    /// The background as saved: a custom picture's path is replaced by the embedded bytes.
+    @MainActor static func packBackground(_ style: BackgroundStyle) -> (BackgroundStyle, Data?) {
+        var style = style
+        guard let spec = style.fillSpec, spec.hasPrefix("picture:") else { return (style, nil) }
+        let url = URL(fileURLWithPath: String(spec.dropFirst("picture:".count)))
+        let data = BackgroundFill.pictureImage(url).flatMap(png)
+        style.fillSpec = data == nil ? nil : "picture:embedded"
+        return (style, data)
+    }
+
+    /// The background to use when opening: values clamped, and a picture only from the embedded
+    /// bytes (copied into Clarishot's own folder). A path written in the file is never read.
+    func unpackedBackground() -> BackgroundStyle {
+        var style = background
+        style.padding = min(max(style.padding, 0), 400)
+        style.cornerRadius = min(max(style.cornerRadius, 0), 100)
+        style.inset = style.inset.map { min(max($0, 0), 200) }
+        style.shadowAmount = style.shadowAmount.map { min(max($0, 0), 1) }
+        style.alignment = style.alignment.map { min(max($0, 0), 8) }
+        if let spec = style.fillSpec, spec.hasPrefix("picture:") {
+            style.fillSpec = nil
+            if let data = backgroundPicture, Self.image(data) != nil,
+               let folder = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                         appropriateFor: nil, create: true)
+                    .appendingPathComponent("Clarishot/Project Pictures", isDirectory: true) {
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = folder.appendingPathComponent(UUID().uuidString + ".png")
+                if (try? data.write(to: file)) != nil { style.fillSpec = "picture:" + file.path }
+            }
+        }
+        return style
+    }
 
     static func png(_ image: CGImage) -> Data? {
         NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
@@ -81,7 +116,8 @@ struct AnnotateProject: Codable {
 
     static func read(_ url: URL) throws -> AnnotateProject {
         let project = try JSONDecoder().decode(AnnotateProject.self, from: Data(contentsOf: url))
-        guard project.format == "clarishot-project" else { throw CocoaError(.fileReadCorruptFile) }
+        guard project.format == "clarishot-project", (0.5...8).contains(project.scale)
+        else { throw CocoaError(.fileReadCorruptFile) }
         return project
     }
 }

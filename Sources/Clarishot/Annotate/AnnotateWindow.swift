@@ -358,10 +358,12 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         guard let url else { return }
         do {
             guard let png = AnnotateProject.png(document.baseImage) else { throw CocoaError(.fileWriteUnknown) }
+            let (background, picture) = AnnotateProject.packBackground(document.background)
             let project = AnnotateProject(scale: document.capture.scale, image: png, crop: document.crop,
-                                          background: document.background,
+                                          background: background,
                                           annotations: document.annotations.map(\.record),
-                                          sourceBundleID: document.capture.sourceBundleID)
+                                          sourceBundleID: document.capture.sourceBundleID,
+                                          backgroundPicture: picture)
             try project.encoded().write(to: url, options: .atomic)
             projectURL = url
             Toast.show("Project saved")
@@ -1311,7 +1313,7 @@ extension AnnotateWindowController {
             guard let controller = openControllers.last else { return }
             controller.document.annotations = project.annotations.compactMap(Annotation.init(record:))
             controller.document.crop = project.crop
-            controller.document.background = project.background
+            controller.document.background = project.unpackedBackground()
             controller.projectURL = url
             controller.canvas.refresh()
             controller.window.title = url.deletingPathExtension().lastPathComponent
