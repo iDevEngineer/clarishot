@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Snapzy and wraps it into build/Snapzy.app.
+# Builds Clarishot and wraps it into build/Clarishot.app.
 # Signing with a stable identity keeps the Screen Recording permission across
 # rebuilds. Override with SIGN_IDENTITY; falls back to ad-hoc ("-") if the
 # default certificate is missing.
@@ -17,14 +17,14 @@ fi
 
 swift build -c release
 
-APP=build/Snapzy.app
+APP=build/Clarishot.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/Snapzy "$APP/Contents/MacOS/Snapzy"
+cp .build/release/Clarishot "$APP/Contents/MacOS/Clarishot"
 # Command-line tool + MCP server for AI tools.
 mkdir -p "$APP/Contents/Helpers"
-cp .build/release/SnapzyCLI "$APP/Contents/Helpers/snapzy"
-codesign --force --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/snapzy"
+cp .build/release/ClarishotCLI "$APP/Contents/Helpers/clarishot"
+codesign --force --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/clarishot"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # WebP encoder: Google's libwebp (BSD licence), copied from Homebrew if installed.
@@ -46,9 +46,9 @@ if [ -f "$WEBP_LIB/libwebp.7.dylib" ]; then
 fi
 
 # App icon: the artwork in Resources/Brand if present, otherwise drawn by the app (AppIcon.swift).
-ICONSET=.build/Snapzy.iconset
+ICONSET=.build/Clarishot.iconset
 rm -rf "$ICONSET"
-ART=Resources/Brand/snapzy-icon.png
+ART=Resources/Brand/clarishot-icon.png
 if [ -f "$ART" ]; then
     mkdir -p "$ICONSET"
     # Shrink to ~86% on a transparent canvas to match the macOS icon grid margins.
@@ -60,7 +60,7 @@ if [ -f "$ART" ]; then
         sips -z $((base * 2)) $((base * 2)) "$MASTER" --out "$ICONSET/icon_${base}x${base}@2x.png" >/dev/null
     done
 else
-    .build/release/Snapzy --write-iconset "$ICONSET"
+    .build/release/Clarishot --write-iconset "$ICONSET"
 fi
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign "$SIGN_IDENTITY" "$APP"

@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "Snapzy",
+    name: "Clarishot",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Snapzy",
-            path: "Sources/Snapzy"
+            name: "Clarishot",
+            path: "Sources/Clarishot"
         ),
-        // `snapzy` command-line tool and MCP server; bundled as Snapzy.app/Contents/Helpers/snapzy.
+        // `clarishot` command-line tool and MCP server; bundled as Clarishot.app/Contents/Helpers/clarishot.
         .executableTarget(
-            name: "SnapzyCLI",
-            path: "Sources/SnapzyCLI"
+            name: "ClarishotCLI",
+            path: "Sources/ClarishotCLI"
         )
     ]
 )
