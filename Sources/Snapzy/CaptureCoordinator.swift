@@ -277,18 +277,20 @@ final class CaptureCoordinator {
     /// `hint` is shown at the top of the screen, e.g. "Drag to capture the scrolling part of the screen."
     /// `allowsWindowPick`: Space switches to clicking a whole window, reported as its area.
     func selectRegion(hint: String? = nil, allowsWindowPick: Bool = false,
-                      then handle: @escaping (ScreenShot, CGRect) -> Void) {
-        guard overlay == nil else { return }
+                      then handle: @escaping (ScreenShot, CGRect) -> Void,
+                      onCancel: (() -> Void)? = nil) {
+        guard overlay == nil else { onCancel?(); return }
         Task {
             do {
                 let targets = allowsWindowPick ? ScreenCapturer.windowTargets() : []
                 let shots = try await ScreenCapturer.captureAllScreens()
                 present(shots, mode: .area, targets: targets, hint: hint, allowsWindowPick: allowsWindowPick) { result in
-                    guard case let .area(shot, rect)? = result else { return }
+                    guard case let .area(shot, rect)? = result else { onCancel?(); return }
                     handle(shot, rect)
                 }
             } catch {
                 showCaptureError(error)
+                onCancel?()
             }
         }
     }

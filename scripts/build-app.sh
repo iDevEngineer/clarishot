@@ -21,6 +21,10 @@ APP=build/Snapzy.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Snapzy "$APP/Contents/MacOS/Snapzy"
+# Command-line tool + MCP server for AI tools.
+mkdir -p "$APP/Contents/Helpers"
+cp .build/release/SnapzyCLI "$APP/Contents/Helpers/snapzy"
+codesign --force --sign "$SIGN_IDENTITY" "$APP/Contents/Helpers/snapzy"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # WebP encoder: Google's libwebp (BSD licence), copied from Homebrew if installed.

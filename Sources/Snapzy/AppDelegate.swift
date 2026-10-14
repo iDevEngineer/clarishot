@@ -28,9 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu = StatusMenuController()
         Shortcuts.registerAll()
         Wallpaper.startWatching()
+        AgentServer.shared.sync()
         // Re-register hotkeys whenever shortcuts change in Settings.
         NotificationCenter.default.addObserver(forName: Settings.didChange, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
+                AgentServer.shared.sync()
                 guard !HotkeyCenter.shared.isSuspended else { return }
                 Shortcuts.registerAll()
             }

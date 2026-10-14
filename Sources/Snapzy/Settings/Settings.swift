@@ -439,6 +439,12 @@ final class Settings {
         set { set(newValue, "crosshairLines") }
     }
 
+    /// Lets the `snapzy` command-line tool and its MCP server (for AI tools) drive Snapzy.
+    var allowAgentAccess: Bool {
+        get { bool("allowAgentAccess", default: false) }
+        set { set(newValue, "allowAgentAccess") }
+    }
+
     /// Lets other apps run captures through snapzy:// links.
     var allowURLScheme: Bool {
         get { bool("allowURLScheme", default: false) }
@@ -448,7 +454,7 @@ final class Settings {
     // MARK: Reset
 
     func resetAll() {
-        for key in ["autoExpandCanvas", "inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
+        for key in ["allowAgentAccess", "autoExpandCanvas", "inverseArrows", "smoothDrawing", "colorNames", "crosshairLines", "allowURLScheme", "showMenuBarIcon", "hideIconsWhileCapturing", "shutterSound", "afterPin", "afterRecShowPreview",
                     "afterRecCopy", "afterRecSave", "previewScale", "autoCloseSaves", "saveButtonAsks",
                     "wallpaperFollowsSpaces", "convertToSRGB", "addBorder", "windowPadding", "annotateOnTop",
                     "annotateDockIcon", "annotateRememberBackground", "annotateShadows", "askForName", "retinaSuffix",

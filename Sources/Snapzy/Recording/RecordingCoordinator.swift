@@ -28,6 +28,16 @@ final class RecordingCoordinator {
 
     var isRecording: Bool { recorder != nil }
 
+    /// Called once with the saved file (or nil on failure) when the current recording finishes.
+    /// Used by the command-line tool's record_stop.
+    var onNextSave: ((URL?) -> Void)?
+
+    private func reportSave(_ url: URL?) {
+        let callback = onNextSave
+        onNextSave = nil
+        callback?(url)
+    }
+
     /// Menu item / shortcut: starts the flow, or stops a recording in progress.
     func toggle() {
         if isRecording { stop(); return }
@@ -358,6 +368,7 @@ final class RecordingCoordinator {
     }
 
     private func handleFailure(_ error: Error) {
+        reportSave(nil)
         cancelAll()
         showError(error)
     }
@@ -394,17 +405,19 @@ final class RecordingCoordinator {
             generator.maximumSize = CGSize(width: 800, height: 800)
             guard duration > 0, let (thumbnail, _) = try? await generator.image(at: .zero) else {
                 Toast.show("The recording could not be saved")
+                reportSave(nil)
                 return
             }
             var fileURL = url
             if format == .gif {
-                guard let gif = await Self.makeGIF(from: url) else { return }
+                guard let gif = await Self.makeGIF(from: url) else { reportSave(nil); return }
                 fileURL = gif
             }
             let capture = Capture(videoURL: fileURL, thumbnail: thumbnail, scale: 1, duration: duration,
                                   sourceVideoURL: format == .gif ? url : nil)
             capture.sourceBundleID = sourceBundleID
             HistoryStore.shared.add(capture)
+            reportSave(fileURL)
             let settings = Settings.shared
             if settings.afterRecordingCopy { capture.copyToClipboard() }
             if settings.afterRecordingSave { _ = try? capture.save() }

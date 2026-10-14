@@ -912,6 +912,15 @@ final class AdvancedPane: SettingsPane {
             row("Shadow", toggle({ s.pinShadow }, { s.pinShadow = $0 })),
             row("Border", toggle({ s.pinBorder }, { s.pinBorder = $0 }))
         ])
+        section("AI Tools & Command Line", [
+            row("Allow AI tools & command line", toggle({ s.allowAgentAccess }, { s.allowAgentAccess = $0 }),
+                note: "Lets the snapzy command-line tool and AI tools (via MCP) take screenshots, read text and list windows through Snapzy. Any app you run can use it while this is on."),
+            row("Add to Claude Code", button("Copy Command") { AgentSetup.copy(AgentSetup.claudeCodeCommand) },
+                note: "Copies a command to paste in Terminal."),
+            row("Claude Desktop, Cursor and other MCP apps", button("Copy JSON") { AgentSetup.copy(AgentSetup.mcpJSON) }),
+            row("Command-line tool", button("Install “snapzy” Command") { AgentSetup.installCommand() },
+                note: "Adds snapzy to ~/.local/bin. Run “snapzy help” to see what it can do.")
+        ])
         section("API", [
             row("Allow URL scheme API", toggle({ s.allowURLScheme }, { s.allowURLScheme = $0 }),
                 note: "Lets other apps and scripts run captures with links like snapzy://capture-area or snapzy://record-screen.")
@@ -959,5 +968,44 @@ final class AboutPane: NSViewController {
             stack.centerYAnchor.constraint(equalTo: root.centerYAnchor)
         ])
         view = root
+    }
+}
+
+/// Helpers for connecting AI tools and the command line to Snapzy.
+@MainActor
+enum AgentSetup {
+    static var cliPath: String { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/snapzy").path }
+
+    static var claudeCodeCommand: String { "claude mcp add --scope user snapzy -- \"\(cliPath)\" mcp" }
+
+    static var mcpJSON: String {
+        """
+        {
+          "mcpServers": {
+            "snapzy": { "command": "\(cliPath)", "args": ["mcp"] }
+          }
+        }
+        """
+    }
+
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        Toast.show("Copied")
+    }
+
+    /// Links ~/.local/bin/snapzy to the tool inside the app.
+    static func installCommand() {
+        let bin = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin")
+        let link = bin.appendingPathComponent("snapzy")
+        do {
+            try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: cliPath)
+            let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").contains(bin.path)
+            Toast.show(onPath ? "Installed: run “snapzy help”" : "Installed in ~/.local/bin (add it to your PATH)")
+        } catch {
+            NSAlert(error: error).runModal()
+        }
     }
 }
