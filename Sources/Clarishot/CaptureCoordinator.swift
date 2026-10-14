@@ -378,7 +378,7 @@ final class CaptureCoordinator {
         return Capture(image: image, scale: scale)
     }
 
-    private func showCaptureError(_ error: Error) {
+    func showCaptureError(_ error: Error) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         if CGPreflightScreenCaptureAccess() {

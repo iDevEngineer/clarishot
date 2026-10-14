@@ -106,6 +106,43 @@ final class PreviewPanel: NSPanel {
     }
 
     private var slidesRight = false
+    private var swipeStart: CGRect?
+    private var swipeDistance: CGFloat = 0
+
+    /// Two-finger swipe toward the screen edge dismisses the card; a short swipe springs back.
+    func handleSwipe(_ event: NSEvent) -> Bool {
+        guard event.phase != [] || swipeStart != nil else { return false } // ignore mouse wheels
+        switch event.phase {
+        case .began:
+            swipeStart = frame
+            swipeDistance = 0
+        case .changed:
+            guard let start = swipeStart else { return false }
+            // Finger movement, whatever the natural-scrolling setting.
+            let finger = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+            swipeDistance += finger
+            let outward = slidesRight ? max(swipeDistance, 0) : min(swipeDistance, 0)
+            let resist = (slidesRight ? min(swipeDistance, 0) : max(swipeDistance, 0)) * 0.2 // a little give inward
+            setFrameOrigin(CGPoint(x: start.minX + outward + resist, y: start.minY))
+            alphaValue = max(0.3, 1 - abs(outward) / (start.width * 1.2))
+        case .ended, .cancelled:
+            guard let start = swipeStart else { return false }
+            swipeStart = nil
+            let outward = slidesRight ? swipeDistance : -swipeDistance
+            if event.phase == .ended, outward > 70 {
+                onDismiss?()
+            } else {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.2
+                    animator().setFrame(start, display: true)
+                    animator().alphaValue = 1
+                }
+            }
+        default:
+            break
+        }
+        return true
+    }
 
     func slideIn(to frame: CGRect, fromRight: Bool = false) {
         slidesRight = fromRight
@@ -199,6 +236,78 @@ final class PreviewCardView: NSView, NSDraggingSource {
         addSubview(hoverView)
         buildHoverControls()
         if capture.isVideo { addDurationBadge() }
+        addInfoLabel()
+    }
+
+    // MARK: File info
+
+    private let infoLabel = NSTextField(labelWithString: "")
+    private var infoFilled = false
+
+    /// A small pill at the top of the hover state: dimensions, format and file size.
+    private func addInfoLabel() {
+        infoLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        infoLabel.textColor = .white
+        infoLabel.alignment = .center
+        infoLabel.wantsLayer = true
+        infoLabel.drawsBackground = false
+        let pill = NSView()
+        pill.wantsLayer = true
+        pill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        pill.layer?.cornerRadius = 8
+        pill.identifier = NSUserInterfaceItemIdentifier("infoPill")
+        pill.addSubview(infoLabel)
+        hoverView.addSubview(pill)
+        infoText(dimensionsOnly: true)
+    }
+
+    private var pixelSize: String {
+        if capture.isVideo, let url = capture.videoURL, capture.isGIF,
+           let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int {
+            return "\(w) × \(h)"
+        }
+        return "\(capture.image.width) × \(capture.image.height)"
+    }
+
+    private func infoText(dimensionsOnly: Bool, bytes: Int? = nil) {
+        var parts = [pixelSize]
+        if capture.isVideo {
+            parts.append((capture.videoURL?.pathExtension ?? "").uppercased())
+        } else {
+            parts.append(Settings.shared.imageFormat.rawValue.uppercased())
+        }
+        if let bytes { parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
+        infoLabel.stringValue = parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        layoutInfoPill()
+    }
+
+    private func layoutInfoPill() {
+        guard let pill = infoLabel.superview else { return }
+        infoLabel.sizeToFit()
+        let size = CGSize(width: infoLabel.frame.width + 14, height: 16)
+        let b = hoverView.bounds
+        // Between the close and pin buttons at the top.
+        pill.frame = CGRect(x: b.midX - size.width / 2, y: b.maxY - 6 - (CircleButton.size + size.height) / 2,
+                            width: size.width, height: size.height)
+        infoLabel.frame = CGRect(x: 7, y: (size.height - infoLabel.frame.height) / 2,
+                                 width: infoLabel.frame.width, height: infoLabel.frame.height)
+    }
+
+    /// Works out the file size the first time the card is hovered (encoding takes a moment).
+    private func fillInfo() {
+        guard !infoFilled else { return }
+        infoFilled = true
+        if let url = capture.videoURL {
+            let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            infoText(dimensionsOnly: false, bytes: bytes)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.infoText(dimensionsOnly: false, bytes: self.capture.imageData()?.count)
+            }
+        }
     }
 
     /// A small, blurred copy of the image for the hover state.
@@ -278,6 +387,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
     override func mouseExited(with event: NSEvent) { setHover(false) }
 
     private func setHover(_ on: Bool) {
+        if on { fillInfo() }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.15
             hoverView.animator().alphaValue = on ? 1 : 0
@@ -285,6 +395,13 @@ final class PreviewCardView: NSView, NSDraggingSource {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Mostly-horizontal trackpad swipes move the card; anything else is ignored.
+        if abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) || event.phase == .ended || event.phase == .cancelled,
+           (window as? PreviewPanel)?.handleSwipe(event) == true { return }
+        super.scrollWheel(with: event)
+    }
 
     // MARK: Actions
 

@@ -54,6 +54,11 @@ label like *Button · 120 × 32*. Click to capture exactly that element.
 
 Needs **Accessibility** permission.
 
+### Capture Menu or Popover (⌥⇧⌘M)
+Open any menu, submenu or menu-bar popover, then press **⌥⇧⌘M**. Clarishot captures just that
+menu (with any open submenus), without an overlay that would close it. From Clarishot's own menu
+you get 3 seconds to reopen the menu you want.
+
 ### Scrolling Capture (⌥⇧⌘S)
 1. Drag around only the part of the window that scrolls (leave out fixed headers and sidebars).
 2. Click **Start Capture**.
@@ -81,7 +86,9 @@ seconds in **Preferences → Screenshots**.
 A card appears in the corner (choose which in **Preferences → Quick Access**). Hover it to see:
 - **Copy** and **Save** (pill buttons)
 - **Annotate** (pencil), **Pin**, and **Close** in the corners
+- File info at the top: size in pixels, format and file size
 - Drag the card into any app to drop the image there.
+- Swipe it toward the screen edge with two fingers to dismiss it.
 
 The card can close by itself after a set time, optionally saving first.
 **Restore Recently Closed** in the menu brings back the last card.

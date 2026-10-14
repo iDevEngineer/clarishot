@@ -659,7 +659,7 @@ final class ShortcutsPane: SettingsPane, NSSearchFieldDelegate {
         let groups: [(String, String, [[ShortcutAction]])] = [
             ("General", "gearshape", [[.allInOne, .toggleDesktopIcons, .openHistory, .restoreLastCapture]]),
             ("Screenshots", "camera", [[.captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow,
-                                        .smartCapture, .objectCutout, .selfTimer],
+                                        .smartCapture, .objectCutout, .captureMenu, .selfTimer],
                                        [.captureAreaCopy, .captureAreaSave, .captureAreaAnnotate, .captureAreaPin]]),
             ("Screen Recording", "video", [[.recordScreen, .pauseRecording]]),
             ("Scrolling Capture", "arrow.down", [[.scrollingCapture]]),

@@ -95,6 +95,7 @@ enum PreferenceIcons {
         "Capture Fullscreen": "display",
         "Capture Window": "macwindow",
         "Smart Capture": "cursorarrow.rays",
+        "Capture Menu or Popover": "filemenu.and.selection",
         "Capture Object (Cutout)": "scissors",
         "Self-Timer": "timer",
         "Capture Area & Copy to Clipboard": "doc.on.doc",

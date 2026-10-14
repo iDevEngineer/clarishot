@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- Capture Menu or Popover (⌥⇧⌘M): captures an open menu, submenus or menu-bar popover.
+- Preview card: swipe toward the edge to dismiss; file info (pixels, format, file size) on hover.
 - Annotate: properties bar for the current tool or selected shape.
 - Arrows: classic, tapered and outlined looks; arrowheads or dots on either end; dashed and dotted lines;
   a draggable bend handle for curved arrows; draggable end points.

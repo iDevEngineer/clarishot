@@ -43,7 +43,7 @@ enum ShortcutAction: String, CaseIterable {
          captureText, recordScreen, pauseRecording,
          toggleDesktopIcons, openHistory, restoreLastCapture,
          captureAreaCopy, captureAreaSave, captureAreaAnnotate, captureAreaPin,
-         smartCapture, objectCutout
+         smartCapture, objectCutout, captureMenu
 
     var title: String {
         switch self {
@@ -66,6 +66,7 @@ enum ShortcutAction: String, CaseIterable {
         case .captureAreaPin: return "Capture Area & Pin to the Screen"
         case .smartCapture: return "Smart Capture"
         case .objectCutout: return "Capture Object (Cutout)"
+        case .captureMenu: return "Capture Menu or Popover"
         }
     }
 
@@ -85,6 +86,7 @@ enum ShortcutAction: String, CaseIterable {
         case .pauseRecording: return Shortcut(key: "p", keyCode: UInt32(kVK_ANSI_P), modifiers: m)
         case .smartCapture: return Shortcut(key: "e", keyCode: UInt32(kVK_ANSI_E), modifiers: m)
         case .objectCutout: return Shortcut(key: "1", keyCode: UInt32(kVK_ANSI_1), modifiers: m)
+        case .captureMenu: return Shortcut(key: "m", keyCode: UInt32(kVK_ANSI_M), modifiers: m)
         case .captureAreaAnnotate: return Shortcut(key: "7", keyCode: UInt32(kVK_ANSI_7), modifiers: m)
         case .toggleDesktopIcons, .openHistory, .restoreLastCapture,
              .captureAreaCopy, .captureAreaSave, .captureAreaPin: return nil
@@ -113,6 +115,7 @@ enum ShortcutAction: String, CaseIterable {
         case .captureAreaAnnotate: c.captureAndAnnotate()
         case .smartCapture: c.captureSmart()
         case .objectCutout: c.captureCutout()
+        case .captureMenu: c.captureMenu()
         case .captureAreaPin: c.captureArea(then: .pin)
         }
     }

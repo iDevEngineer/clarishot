@@ -93,6 +93,7 @@ Every shortcut can be changed or turned off in **Preferences → Shortcuts**. Th
 | Capture Fullscreen | ⌥⇧⌘3 |
 | Capture Window | ⌥⇧⌘5 |
 | Smart Capture | ⌥⇧⌘E |
+| Capture Menu or Popover | ⌥⇧⌘M |
 | Capture Object (cutout) | ⌥⇧⌘1 |
 | Capture & Annotate | ⌥⇧⌘7 |
 | Capture Text (OCR) | ⌥⇧⌘2 |

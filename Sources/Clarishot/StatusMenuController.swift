@@ -48,6 +48,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         add(menu, "Smart Capture", symbol: "cursorarrow.rays", action: #selector(smartCapture), shortcut: .smartCapture)
         add(menu, "Capture Object", symbol: "scissors", action: #selector(objectCutout),
             shortcut: .objectCutout)
+        add(menu, "Capture Menu or Popover", symbol: "filemenu.and.selection", action: #selector(captureMenu),
+            shortcut: .captureMenu)
         add(menu, "Capture & Annotate", symbol: "pencil.and.outline", action: #selector(captureAndAnnotate),
             shortcut: .captureAreaAnnotate)
         add(menu, "Scrolling Capture", symbol: "arrow.down", action: #selector(scrollingCapture), shortcut: .scrollingCapture)
@@ -115,6 +117,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func captureFullscreen() { CaptureCoordinator.shared.captureFullscreen() }
     @objc private func captureWindow() { CaptureCoordinator.shared.captureWindow() }
     @objc private func smartCapture() { CaptureCoordinator.shared.captureSmart() }
+    /// Opening this menu closes other menus, so give the user a few seconds to reopen theirs.
+    @objc private func captureMenu() { CaptureCoordinator.shared.captureMenu(delay: 3) }
     @objc private func objectCutout() { CaptureCoordinator.shared.captureCutout() }
     @objc private func captureAndAnnotate() { CaptureCoordinator.shared.captureAndAnnotate() }
     @objc private func captureText() { CaptureCoordinator.shared.captureText() }
