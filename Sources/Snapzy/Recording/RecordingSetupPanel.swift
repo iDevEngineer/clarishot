@@ -24,8 +24,9 @@ struct RecordingOptions {
     var clickScale = 0.5         // 0 … 1, see clickDiameter
     var clickFilled = false      // false = outline
     var clickAnimate = true
-    var keystrokesAtTop = false
-    var keystrokeSize = 1        // 0 small, 1 medium, 2 large
+    var keystrokePosition = 4    // index into keystrokePositions (4 = Bottom-Center)
+    var keystrokeScale = 0.5     // 0 … 1, see keystrokeFontSize
+    var keystrokesBlur = true
     var keystrokesLight = false
     var keystrokesCommandOnly = false
     var maxResolution = 0        // index into maxHeights: 0 = original
@@ -46,7 +47,9 @@ struct RecordingOptions {
     ]
     var clickNSColor: NSColor { Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color }
     var clickDiameter: CGFloat { 24 + CGFloat(min(max(clickScale, 0), 1)) * 56 }
-    var keystrokeFontSize: CGFloat { [18, 26, 36][min(max(keystrokeSize, 0), 2)] }
+    var keystrokeFontSize: CGFloat { 16 + CGFloat(min(max(keystrokeScale, 0), 1)) * 28 }
+
+    static let keystrokePositions = ["Top-Left", "Top-Center", "Top-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"]
 
     var cameraDiameter: CGFloat { [120, 180, 260][min(max(cameraSize, 0), 2)] }
 
@@ -76,8 +79,9 @@ struct RecordingOptions {
         o.clickScale = d["clickScale"] as? Double ?? o.clickScale
         o.clickFilled = d["clickFilled"] as? Bool ?? o.clickFilled
         o.clickAnimate = d["clickAnimate"] as? Bool ?? o.clickAnimate
-        o.keystrokesAtTop = d["keystrokesAtTop"] as? Bool ?? o.keystrokesAtTop
-        o.keystrokeSize = d["keystrokeSize"] as? Int ?? o.keystrokeSize
+        o.keystrokePosition = d["keystrokePosition"] as? Int ?? o.keystrokePosition
+        o.keystrokeScale = d["keystrokeScale"] as? Double ?? o.keystrokeScale
+        o.keystrokesBlur = d["keystrokesBlur"] as? Bool ?? o.keystrokesBlur
         o.keystrokesLight = d["keystrokesLight"] as? Bool ?? o.keystrokesLight
         o.keystrokesCommandOnly = d["keystrokesCommandOnly"] as? Bool ?? o.keystrokesCommandOnly
         o.maxResolution = d["maxResolution"] as? Int ?? o.maxResolution
@@ -97,8 +101,8 @@ struct RecordingOptions {
             "hideDesktopIcons": hideDesktopIcons, "cameraSize": cameraSize,
             "cameraRounded": cameraRounded, "cameraMirrored": cameraMirrored,
             "dimScreen": dimScreen, "rememberSelection": rememberSelection, "clickColor": clickColor,
-            "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate, "keystrokesAtTop": keystrokesAtTop,
-            "keystrokeSize": keystrokeSize, "keystrokesLight": keystrokesLight,
+            "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate, "keystrokePosition": keystrokePosition,
+            "keystrokeScale": keystrokeScale, "keystrokesBlur": keystrokesBlur, "keystrokesLight": keystrokesLight,
             "keystrokesCommandOnly": keystrokesCommandOnly, "maxResolution": maxResolution,
             "audioMono": audioMono, "gifFPS": gifFPS, "gifMaxWidth": gifMaxWidth,
             "gifOptimize": gifOptimize, "gifQuality": gifQuality

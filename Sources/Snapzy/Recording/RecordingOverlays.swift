@@ -440,7 +440,7 @@ enum ClickRipple {
 final class KeystrokeWindow: NSWindow {
     private var monitors: [Any] = []
     private let label = NSTextField(labelWithString: "")
-    private let pill = NSView()
+    private let pill: NSView
     private var hideWork: DispatchWorkItem?
 
     /// True if Snapzy may read keystrokes; otherwise asks macOS to show the permission prompt.
@@ -450,13 +450,22 @@ final class KeystrokeWindow: NSWindow {
     }
 
     private let options: RecordingOptions
+    private static let margin: CGFloat = 24
 
+    /// Covers `rect`; the pill is placed in the chosen corner or centre of it.
     init(rect: CGRect, options: RecordingOptions) {
         self.options = options
-        let height = options.keystrokeFontSize * 2.6
-        let y = options.keystrokesAtTop ? rect.maxY - 24 - height : rect.minY + 24
-        let frame = CGRect(x: rect.minX, y: y, width: rect.width, height: height)
-        super.init(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        if options.keystrokesBlur {
+            let blur = NSVisualEffectView()
+            blur.material = options.keystrokesLight ? .popover : .hudWindow
+            blur.appearance = NSAppearance(named: options.keystrokesLight ? .aqua : .darkAqua)
+            blur.state = .active
+            blur.blendingMode = .behindWindow
+            pill = blur
+        } else {
+            pill = NSView()
+        }
+        super.init(contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .screenSaver
         backgroundColor = .clear
@@ -465,17 +474,25 @@ final class KeystrokeWindow: NSWindow {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let root = NSView(frame: CGRect(origin: .zero, size: frame.size))
+        let root = NSView(frame: CGRect(origin: .zero, size: rect.size))
         pill.wantsLayer = true
-        pill.layer?.backgroundColor = (options.keystrokesLight ? NSColor.white.withAlphaComponent(0.92)
-                                                               : NSColor.black.withAlphaComponent(0.75)).cgColor
-        pill.layer?.cornerRadius = 12
+        if !options.keystrokesBlur {
+            pill.layer?.backgroundColor = (options.keystrokesLight ? NSColor.white.withAlphaComponent(0.92)
+                                                                   : NSColor.black.withAlphaComponent(0.78)).cgColor
+        }
+        pill.layer?.cornerRadius = options.keystrokeFontSize * 0.45
+        pill.layer?.masksToBounds = true
         pill.alphaValue = 0
         label.font = .systemFont(ofSize: options.keystrokeFontSize, weight: .semibold)
         label.textColor = options.keystrokesLight ? .black : .white
         pill.addSubview(label)
         root.addSubview(pill)
         contentView = root
+    }
+
+    /// Shows example keys for a moment (used by Preview in the options panel).
+    func showSample(_ text: String) {
+        display(text)
     }
 
     func startMonitoring() {
@@ -500,12 +517,26 @@ final class KeystrokeWindow: NSWindow {
         if flags.contains(.shift) { text += "⇧" }
         if flags.contains(.command) { text += "⌘" }
         text += Self.name(for: event)
+        display(text)
+    }
+
+    private func display(_ text: String) {
         label.stringValue = text
         label.sizeToFit()
-        let size = CGSize(width: label.frame.width + 32, height: label.frame.height + 16)
+        let padX = options.keystrokeFontSize * 0.7, padY = options.keystrokeFontSize * 0.35
+        let size = CGSize(width: label.frame.width + 2 * padX, height: label.frame.height + 2 * padY)
         let root = contentView!.bounds
-        pill.frame = CGRect(x: root.midX - size.width / 2, y: root.midY - size.height / 2, width: size.width, height: size.height)
-        label.setFrameOrigin(CGPoint(x: 16, y: 8))
+        let m = Self.margin
+        let position = options.keystrokePosition
+        let x: CGFloat
+        switch position % 3 {
+        case 0: x = m
+        case 2: x = root.maxX - m - size.width
+        default: x = root.midX - size.width / 2
+        }
+        let y = position < 3 ? root.maxY - m - size.height : m
+        pill.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+        label.setFrameOrigin(CGPoint(x: padX, y: padY))
         pill.alphaValue = 1
 
         hideWork?.cancel()

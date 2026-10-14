@@ -38,7 +38,8 @@ final class RecordingSettingsViewController: NSViewController {
                                                                   optionToggle(\.highlightClicks)))
             ]),
             section("Keystrokes", [
-                row("Show keystrokes", control: withOptions(keystrokeMenu, optionToggle(\.showKeystrokes)),
+                row("Show keystrokes", control: withOptionsPanel({ [unowned self] in self.showKeystrokeOptions(from: $0) },
+                                                                 optionToggle(\.showKeystrokes)),
                     note: "Needs Accessibility permission to see keys typed in other apps.")
             ]),
             section("Video", [
@@ -271,41 +272,6 @@ final class RecordingSettingsViewController: NSViewController {
         return stack
     }
 
-    /// An "Options…" button that opens `menu`, next to a switch.
-    private func withOptions(_ menu: @escaping () -> NSMenu, _ control: NSView) -> NSView {
-        let button = NSButton(title: "Options…", target: nil, action: nil)
-        button.bezelStyle = .rounded
-        button.controlSize = .small
-        let target = Callback { sender in
-            guard let button = sender as? NSButton else { return }
-            menu().popUp(positioning: nil, at: CGPoint(x: 0, y: button.bounds.maxY + 2), in: button)
-        }
-        targets.append(target)
-        button.target = target
-        button.action = #selector(Callback.fire(_:))
-        let stack = NSStackView(views: [button, control])
-        stack.spacing = 10
-        return stack
-    }
-
-    // MARK: Options menus
-
-    private func choice(_ title: String, on: Bool, _ change: @escaping (inout RecordingOptions) -> Void) -> NSMenuItem {
-        let item = ClosureMenuItem(title: title) { [weak self] in
-            guard let self else { return }
-            change(&self.options)
-            self.onChange(self.options)
-        }
-        item.state = on ? .on : .off
-        return item
-    }
-
-    private func header(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
     private var clickPopover: NSPopover?
 
     private func showClickOptions(from button: NSView) {
@@ -323,25 +289,21 @@ final class RecordingSettingsViewController: NSViewController {
         clickPopover = popover
     }
 
-    private func keystrokeMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.addItem(header("Position"))
-        menu.addItem(choice("Bottom", on: !options.keystrokesAtTop) { $0.keystrokesAtTop = false })
-        menu.addItem(choice("Top", on: options.keystrokesAtTop) { $0.keystrokesAtTop = true })
-        menu.addItem(.separator())
-        menu.addItem(header("Size"))
-        for (index, name) in ["Small", "Medium", "Large"].enumerated() {
-            menu.addItem(choice(name, on: options.keystrokeSize == index) { $0.keystrokeSize = index })
+    private var keystrokePopover: NSPopover?
+
+    private func showKeystrokeOptions(from button: NSView) {
+        let controller = KeystrokeOptionsViewController(options: options) { [weak self] new in
+            guard let self else { return }
+            self.options = new
+            self.onChange(new)
         }
-        menu.addItem(.separator())
-        menu.addItem(header("Style"))
-        menu.addItem(choice("Dark", on: !options.keystrokesLight) { $0.keystrokesLight = false })
-        menu.addItem(choice("Light", on: options.keystrokesLight) { $0.keystrokesLight = true })
-        menu.addItem(.separator())
-        menu.addItem(choice("Show only shortcuts (⌘ ⌥ ⌃ keys)", on: options.keystrokesCommandOnly) {
-            $0.keystrokesCommandOnly.toggle()
-        })
-        return menu
+        let popover = NSPopover()
+        popover.behavior = .semitransient
+        popover.appearance = NSAppearance(named: .darkAqua)
+        popover.contentViewController = controller
+        controller.onDone = { [weak popover] in popover?.close() }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxX)
+        keystrokePopover = popover
     }
 }
 
@@ -466,5 +428,113 @@ private final class ClickPreviewView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let layer else { return }
         ClickRipple.add(to: layer, at: convert(event.locationInWindow, from: nil), options: options())
+    }
+}
+
+/// Keystroke display options: size, appearance, position, which keys, blur, Preview and Done.
+@MainActor
+final class KeystrokeOptionsViewController: NSViewController {
+    var onDone: (() -> Void)?
+    private var options: RecordingOptions
+    private let onChange: (RecordingOptions) -> Void
+    private var targets: [AnyObject] = []
+    private var previewWindow: KeystrokeWindow?
+    private static let width: CGFloat = 400
+
+    init(options: RecordingOptions, onChange: @escaping (RecordingOptions) -> Void) {
+        self.options = options
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func loadView() {
+        let size = NSSlider(value: options.keystrokeScale, minValue: 0, maxValue: 1, target: nil, action: nil)
+        size.numberOfTickMarks = 7
+        size.translatesAutoresizingMaskIntoConstraints = false
+        size.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        bind(size) { [unowned self] in self.options.keystrokeScale = ($0 as? NSSlider)?.doubleValue ?? 0.5 }
+
+        let appearance = RecordingSettingsViewController.plainPopup()
+        appearance.addItems(withTitles: ["Dark", "Light"])
+        appearance.selectItem(at: options.keystrokesLight ? 1 : 0)
+        bind(appearance) { [unowned self] in self.options.keystrokesLight = ($0 as? NSPopUpButton)?.indexOfSelectedItem == 1 }
+
+        let position = RecordingSettingsViewController.plainPopup()
+        position.addItems(withTitles: RecordingOptions.keystrokePositions)
+        position.selectItem(at: options.keystrokePosition)
+        bind(position) { [unowned self] in self.options.keystrokePosition = ($0 as? NSPopUpButton)?.indexOfSelectedItem ?? 4 }
+
+        let keys = RecordingSettingsViewController.plainPopup()
+        keys.addItems(withTitles: ["Show all keys", "Show only command keys"])
+        keys.selectItem(at: options.keystrokesCommandOnly ? 1 : 0)
+        bind(keys) { [unowned self] in self.options.keystrokesCommandOnly = ($0 as? NSPopUpButton)?.indexOfSelectedItem == 1 }
+
+        let blur = NSSwitch()
+        blur.state = options.keystrokesBlur ? .on : .off
+        bind(blur) { [unowned self] in self.options.keystrokesBlur = ($0 as? NSSwitch)?.state == .on }
+
+        let rows: [NSView] = [("Size", size as NSView), ("Appearance", appearance), ("Position", position),
+                              ("Keys", keys), ("Blur background", blur)].map { title, control in
+            let row = NSStackView(views: [NSTextField(labelWithString: title), NSView(), control])
+            row.alignment = .centerY
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            return row
+        }
+        let group = RecordingSettingsViewController.groupBox(rows)
+
+        let preview = NSButton(title: "Preview", target: self, action: #selector(showPreview))
+        preview.bezelStyle = .rounded
+        let done = NSButton(title: "Done", target: self, action: #selector(done))
+        done.bezelStyle = .rounded
+        done.keyEquivalent = "\r"
+        let footer = NSStackView(views: [preview, NSView(), done])
+
+        let divider = RecordingSettingsViewController.hairline()
+        let stack = NSStackView(views: [group, divider, footer])
+        stack.orientation = .vertical
+        stack.spacing = 16
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 16, right: 20)
+        for v in [group, footer] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            v.widthAnchor.constraint(equalToConstant: Self.width - 40).isActive = true
+        }
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = RecordingSettingsViewController.panelColor.cgColor
+        view = stack
+        preferredContentSize = stack.fittingSize
+    }
+
+    private func bind(_ control: NSControl, _ change: @escaping (Any?) -> Void) {
+        let target = Callback { [unowned self] sender in
+            change(sender)
+            self.onChange(self.options)
+        }
+        targets.append(target)
+        control.target = target
+        control.action = #selector(Callback.fire(_:))
+    }
+
+    /// Shows a sample key press on screen with the current settings.
+    @objc private func showPreview() {
+        previewWindow?.orderOut(nil)
+        guard let screen = NSScreen.main else { return }
+        let window = KeystrokeWindow(rect: screen.visibleFrame, options: options)
+        window.orderFrontRegardless()
+        window.showSample("⌘⇧4")
+        previewWindow = window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak window] in
+            window?.orderOut(nil)
+            if self?.previewWindow === window { self?.previewWindow = nil }
+        }
+    }
+
+    @objc private func done() {
+        previewWindow?.orderOut(nil)
+        onDone?()
     }
 }
