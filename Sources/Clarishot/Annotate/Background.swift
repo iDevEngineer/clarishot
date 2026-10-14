@@ -253,6 +253,8 @@ struct BackgroundStyle: Codable, Equatable {
     var shadowAmount: CGFloat?
     /// Where the screenshot sits when the ratio leaves extra space: 0…8, left-to-right, top-to-bottom (4 = centre).
     var alignment: Int?
+    /// Centre the screenshot's visible content, ignoring empty single-colour space at its edges.
+    var autoBalance: Bool?
 
     var effectiveInset: CGFloat { inset ?? 0 }
     var effectiveShadow: CGFloat { shadowAmount ?? (shadow ? 0.5 : 0) }
@@ -286,7 +288,7 @@ struct BackgroundStyle: Codable, Equatable {
     /// The whole canvas, and where the screenshot's top-left goes in it (points, top-left origin).
     /// `content` is the screenshot; inset and padding go around it, and any extra room from the
     /// ratio is shared out according to `alignment`.
-    func layout(for content: CGSize) -> (canvas: CGSize, origin: CGPoint) {
+    func layout(for content: CGSize, balance: CGVector = .zero) -> (canvas: CGSize, origin: CGPoint) {
         let framed = CGSize(width: content.width + 2 * effectiveInset, height: content.height + 2 * effectiveInset)
         var w = framed.width + 2 * padding, h = framed.height + 2 * padding
         if let ratio = Self.aspects[min(max(aspect, 0), Self.aspects.count - 1)].ratio {
@@ -297,8 +299,11 @@ struct BackgroundStyle: Codable, Equatable {
         // Centre keeps padding even on every side. Any other choice pushes the screenshot flush
         // against that edge or corner, the way a window peeks in from the side.
         let spareX = w - framed.width, spareY = h - framed.height
-        return (CGSize(width: w, height: h),
-                CGPoint(x: spareX * fx + effectiveInset, y: spareY * fy + effectiveInset))
+        // Auto-balance nudges the screenshot so its content, not its rectangle, sits where chosen,
+        // without letting it leave the background.
+        let x = min(max(spareX * fx + balance.dx, 0), spareX)
+        let y = min(max(spareY * fy + balance.dy, 0), spareY)
+        return (CGSize(width: w, height: h), CGPoint(x: x + effectiveInset, y: y + effectiveInset))
     }
 
     func insets(for content: CGSize) -> CGSize {
@@ -361,7 +366,9 @@ enum BackgroundRenderer {
     @MainActor
     static func compose(_ image: CGImage, scale: CGFloat, style: BackgroundStyle) -> CGImage? {
         let content = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
-        let layout = style.layout(for: content)
+        let balance = style.autoBalance == true
+            ? ContentBalance.offset(for: image, crop: CGRect(origin: .zero, size: content), pointSize: content) : .zero
+        let layout = style.layout(for: content, balance: balance)
         let width = Int((layout.canvas.width * scale).rounded()), height = Int((layout.canvas.height * scale).rounded())
         guard let ctx = AnnotationRenderer.makeContext(width: width, height: height, like: image) else { return nil }
         let full = CGRect(x: 0, y: 0, width: width, height: height)
@@ -634,4 +641,53 @@ final class FillSwatch: NSButton {
     }
 
     @objc private func clicked() { onClick?() }
+}
+
+/// Auto-balance: finds the empty, single-colour space along each edge of a screenshot so the
+/// visible content can be centred on the background instead of the raw rectangle.
+@MainActor
+enum ContentBalance {
+    private static var cache: [String: CGVector] = [:]
+
+    /// How far to move the screenshot (points, top-left origin) so its content looks centred.
+    /// `crop` is in points; `pointSize` is the image's size in points.
+    static func offset(for image: CGImage, crop: CGRect, pointSize: CGSize) -> CGVector {
+        let scale = CGFloat(image.width) / max(pointSize.width, 1)
+        let key = "\(ObjectIdentifier(image).hashValue)-\(crop.integral)"
+        if let cached = cache[key] { return cached }
+        let pixelCrop = CGRect(x: crop.minX * scale, y: crop.minY * scale,
+                               width: crop.width * scale, height: crop.height * scale).integral
+        guard let cropped = image.cropping(to: pixelCrop) else { return .zero }
+        // Work on a small copy: margins don't need full resolution.
+        let shrink = min(1, 400 / CGFloat(max(cropped.width, cropped.height)))
+        let w = max(Int(CGFloat(cropped.width) * shrink), 2), h = max(Int(CGFloat(cropped.height) * shrink), 2)
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return .zero }
+        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // Memory row 0 is the top of the picture.
+        func px(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+            let i = (y * w + x) * 4
+            return (Int(pixels[i]), Int(pixels[i + 1]), Int(pixels[i + 2]))
+        }
+        func near(_ a: (Int, Int, Int), _ b: (Int, Int, Int)) -> Bool {
+            abs(a.0 - b.0) + abs(a.1 - b.1) + abs(a.2 - b.2) < 30
+        }
+        func uniformRow(_ y: Int, _ ref: (Int, Int, Int)) -> Bool { (0..<w).allSatisfy { near(px($0, y), ref) } }
+        func uniformCol(_ x: Int, _ ref: (Int, Int, Int)) -> Bool { (0..<h).allSatisfy { near(px(x, $0), ref) } }
+        let maxX = Int(Double(w) * 0.4), maxY = Int(Double(h) * 0.4)
+        var top = 0, bottom = 0, left = 0, right = 0
+        let tRef = px(w / 2, 0), bRef = px(w / 2, h - 1), lRef = px(0, h / 2), rRef = px(w - 1, h / 2)
+        while top < maxY, uniformRow(top, tRef) { top += 1 }
+        while bottom < maxY, uniformRow(h - 1 - bottom, bRef) { bottom += 1 }
+        while left < maxX, uniformCol(left, lRef) { left += 1 }
+        while right < maxX, uniformCol(w - 1 - right, rRef) { right += 1 }
+        // Back to points.
+        let toPoints = 1 / (shrink * scale)
+        let result = CGVector(dx: CGFloat(right - left) / 2 * toPoints, dy: CGFloat(bottom - top) / 2 * toPoints)
+        if cache.count > 40 { cache.removeAll() }
+        cache[key] = result
+        return result
+    }
 }

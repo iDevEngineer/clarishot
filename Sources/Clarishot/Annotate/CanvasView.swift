@@ -111,7 +111,10 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     /// Canvas size and screenshot position (image points) when the background is on.
     private var backgroundLayout: (canvas: CGSize, origin: CGPoint)? {
-        document.background.enabled ? document.background.layout(for: document.crop.size) : nil
+        guard document.background.enabled else { return nil }
+        let balance = document.background.autoBalance == true
+            ? ContentBalance.offset(for: document.baseImage, crop: document.crop, pointSize: document.imageSize) : .zero
+        return document.background.layout(for: document.crop.size, balance: balance)
     }
 
     private var totalSize: CGSize { backgroundLayout?.canvas ?? document.crop.size }

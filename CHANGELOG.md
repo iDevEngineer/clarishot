@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Background tool is now a left sidebar: presets, gradients, wallpapers (add your own), blurred
   wallpapers, plain colours, padding, inset, shadow, corners, alignment and ratio.
 - 20 soft multi-colour "mesh" gradient backgrounds.
+- Auto-balance: centres a screenshot's content on the background, ignoring empty space at its edges.
 
 ### Fixed
 - Curved tapered arrows now taper from a thin tail to a thick head.

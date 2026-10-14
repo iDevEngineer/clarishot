@@ -175,7 +175,7 @@ final class BackgroundSidebarView: NSView {
         let sliders = NSStackView(views: [
             labelled("Padding", padding),
             twoColumns(labelled("Inset", inset), labelled("Corners", corners)),
-            twoColumns(labelled("Shadow", shadow), NSView()),
+            twoColumns(labelled("Shadow", shadow), autoBalanceBox()),
             twoColumns(labelled("Alignment", alignmentGrid()), labelled("Ratio", ratio))
         ])
         sliders.orientation = .vertical
@@ -264,6 +264,26 @@ final class BackgroundSidebarView: NSView {
             self?.change(rebuildAfter: false) { set(&$0, v); $0.enabled = true }
         }
         return slider
+    }
+
+    /// "Auto-balance": centres the screenshot's content, ignoring empty space at its edges.
+    private func autoBalanceBox() -> NSView {
+        let box = NSButton(checkboxWithTitle: "Auto-balance", target: nil, action: nil)
+        box.controlSize = .small
+        box.font = .systemFont(ofSize: 11, weight: .medium)
+        box.state = style.autoBalance == true ? .on : .off
+        box.toolTip = "Centre what's in the screenshot, ignoring empty space around its edges"
+        bind(box) { [weak self, weak box] in
+            let on = box?.state == .on
+            self?.change(rebuildAfter: false) { $0.autoBalance = on; $0.enabled = true }
+        }
+        // Line it up with the Shadow slider (below its label).
+        let stack = NSStackView(views: [NSView(), box])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        stack.views[0].heightAnchor.constraint(equalToConstant: 14).isActive = true
+        return stack
     }
 
     /// 3 × 3 buttons choosing where the screenshot sits when the ratio leaves spare room.
