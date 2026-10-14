@@ -529,12 +529,12 @@ final class GeneralPane: SettingsPane {
                                       note: "Use translucent Liquid Glass for floating bars and panels. Turn off to use solid controls.",
                                       toggle({ s.liquidGlass }, { s.liquidGlass = $0 })))
         }
-        section("Appearance", appearance)
-        section("App", [
+        section("Startup", [
             row("Launch at login", toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 })),
             row("Show menu bar icon", toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }),
                 note: "When hidden, open Clarishot again from Finder to get back to Preferences.")
         ])
+        section("Appearance", appearance)
         section("Capture", [
             row("Hide desktop icons while capturing",
                 toggle({ s.hideDesktopIconsWhileCapturing }, { s.hideDesktopIconsWhileCapturing = $0 }),
