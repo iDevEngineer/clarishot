@@ -428,8 +428,9 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if !d.isEmpty {
                 document.checkpoint()
                 document.annotations.append(d)
-                // A new arrow or line stays selected, so its ends can be adjusted straight away.
-                if d.tool == .arrow || d.tool == .line { selectedIndex = document.annotations.count - 1 }
+                // A new arrow, line or highlight stays selected, so it can be adjusted straight away
+                // (ends, colour, thickness, mode) without switching to the Select tool.
+                if [.arrow, .line, .highlighter].contains(d.tool) { selectedIndex = document.annotations.count - 1 }
                 changed()
             }
         }
