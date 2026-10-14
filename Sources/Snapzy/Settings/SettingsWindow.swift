@@ -251,6 +251,8 @@ final class ScreenshotsPane: SettingsPane {
             s.autoBackgroundPreset = $0 == 0 ? nil : presets[$0 - 1]
         })
         note("Adds a saved background preset to every new screenshot. Create presets in Annotate’s background tool.")
+        row("Full-screen captures", checkbox("Place on the wallpaper", get: { s.fullscreenOnWallpaper },
+                                             set: { s.fullscreenOnWallpaper = $0 }))
         let delays = [3, 5, 10]
         row("Self-timer", popup(["3 seconds", "5 seconds", "10 seconds"], selected: delays.firstIndex(of: s.selfTimerSeconds) ?? 1) {
             s.selfTimerSeconds = delays[$0]

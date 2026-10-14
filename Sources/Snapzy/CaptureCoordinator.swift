@@ -115,7 +115,17 @@ final class CaptureCoordinator {
                 let shots = try await ScreenCapturer.captureAllScreens()
                 let mouse = NSEvent.mouseLocation
                 guard let shot = shots.first(where: { $0.screen.frame.contains(mouse) }) ?? shots.first else { return }
-                deliver(Capture(image: shot.image, scale: shot.screen.backingScaleFactor).from(SourceApp.frontmost()))
+                var image = shot.image
+                if Settings.shared.fullscreenOnWallpaper {
+                    await Wallpaper.refresh()
+                    var style = BackgroundStyle()
+                    style.enabled = true
+                    style.fillIndex = BackgroundFill.presets.count - 1 // wallpaper
+                    style.padding = 80
+                    style.cornerRadius = 14
+                    image = BackgroundRenderer.compose(image, scale: shot.screen.backingScaleFactor, style: style) ?? image
+                }
+                deliver(Capture(image: image, scale: shot.screen.backingScaleFactor).from(SourceApp.frontmost()))
             } catch {
                 showCaptureError(error)
             }

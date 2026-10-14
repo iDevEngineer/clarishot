@@ -16,7 +16,7 @@ final class PreviewManager {
         guard let capture = recentlyClosed.popLast() else { return }
         show(capture)
     }
-    private let edgeInset: CGFloat = 20
+    private let edgeInset: CGFloat = 36
     private let spacing: CGFloat = 12
 
     func show(_ capture: Capture) {

@@ -115,6 +115,12 @@ final class Settings {
         set { set(newValue, "keepLineBreaks") }
     }
 
+    /// Full-screen captures: place the screenshot on the wallpaper with padding and a shadow.
+    var fullscreenOnWallpaper: Bool {
+        get { bool("fullscreenOnWallpaper", default: true) }
+        set { set(newValue, "fullscreenOnWallpaper") }
+    }
+
     var showMagnifier: Bool {
         get { bool("showMagnifier", default: false) }
         set { set(newValue, "showMagnifier") }
@@ -243,7 +249,7 @@ final class Settings {
                     "scaleScreenshotsTo1x", "showCursorInScreenshots", "afterShowPreview", "afterCopy", "afterSave",
                     "afterAnnotate", "previewPosition", "previewAutoClose", "previewOnActiveScreen",
                     "closePreviewAfterDragging", "recordingTimeInMenuBar", "controlsWhileRecording",
-                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle", "autoBackgroundPreset", "keepLineBreaks"] {
+                    "customWallpaper", "shortcuts", "historyDays", "showMagnifier", "selfTimerSeconds", "windowStyle", "autoBackgroundPreset", "keepLineBreaks", "fullscreenOnWallpaper"] {
             defaults.removeObject(forKey: key)
         }
         notify()
