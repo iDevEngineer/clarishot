@@ -38,6 +38,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         super.init(frame: .zero)
     }
 
+    /// Edges and text lines of the current picture, redone when it changes (rotate, cut out…).
+    private var guides: (image: CGImage, value: SnapGuides)?
+    private var snapGuides: SnapGuides {
+        if let guides, guides.image === document.baseImage { return guides.value }
+        let value = SnapGuides(image: document.baseImage, pointSize: document.imageSize)
+        guides = (document.baseImage, value)
+        return value
+    }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override var isFlipped: Bool { true }
@@ -218,6 +227,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         case .crop:
             guard let start = cropStart else { return }
             p = clampToImage(p)
+            if Settings.shared.annotateSnapToEdges, !event.modifierFlags.contains(.command) {
+                // Snap within ~8 screen points, whatever the zoom.
+                let tolerance = 8 / max(viewScale, 0.01)
+                p.x = SnapGuides.snap(p.x, to: snapGuides.verticalEdges, tolerance: tolerance)
+                p.y = SnapGuides.snap(p.y, to: snapGuides.horizontalEdges, tolerance: tolerance)
+            }
             if let ratio = cropAspect {
                 // Keep the chosen shape: follow the wider drag direction.
                 var w = abs(p.x - start.x), h = abs(p.y - start.y)
@@ -231,8 +246,18 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             if shift { p = constrained(p, from: d.start, tool: d.tool) }
             d.end = p
             if d.tool.isFreehand {
-                // Shift on the highlighter draws a straight stroke.
-                if shift && d.tool == .highlighter { d.points = [d.start, p] } else { d.points.append(p) }
+                if d.tool == .highlighter, Settings.shared.annotateSnapHighlight, !event.modifierFlags.contains(.command),
+                   let line = snapGuides.textLine(at: d.start) {
+                    // Started on a line of text: run straight along its middle, across the words covered.
+                    let y = line.midY
+                    d.points = [CGPoint(x: d.start.x, y: y), CGPoint(x: p.x, y: y)]
+                    d.end = CGPoint(x: p.x, y: y)
+                } else if shift && d.tool == .highlighter {
+                    // Shift on the highlighter draws a straight stroke.
+                    d.points = [d.start, p]
+                } else {
+                    d.points.append(p)
+                }
             }
             draft = d
         }

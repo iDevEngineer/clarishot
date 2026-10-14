@@ -62,6 +62,8 @@ enum PreferenceIcons {
         "Remember if background tool was opened": "photo.artframe",
         "Draw shadow on objects": "shadow",
         "Automatically expand canvas": "arrow.up.left.and.arrow.down.right",
+        "Snap to Edges": "square.dashed",
+        "Snap Highlight to Text": "highlighter",
         "Always on top": "square.stack.3d.up",
         "Show Dock icon": "dock.rectangle",
         "Show color names": "textformat",

@@ -916,6 +916,10 @@ final class AnnotatePane: SettingsPane {
             row("Remember if background tool was opened", toggle({ s.annotateRememberBackground },
                                                                  { s.annotateRememberBackground = $0 })),
             row("Draw shadow on objects", toggle({ s.annotateShadows }, { s.annotateShadows = $0 })),
+            row("Snap to Edges", toggle({ s.annotateSnapToEdges }, { s.annotateSnapToEdges = $0 }),
+                note: "Snap crop edges to content borders while dragging. Hold ⌘ to temporarily disable."),
+            row("Snap Highlight to Text", toggle({ s.annotateSnapHighlight }, { s.annotateSnapHighlight = $0 }),
+                note: "Align highlighter strokes to nearby text lines while dragging. Hold ⌘ to temporarily disable."),
             row("Automatically expand canvas", toggle({ s.annotateAutoExpand }, { s.annotateAutoExpand = $0 }),
                 note: "Ensures all annotations fit by dynamically resizing canvas.")
         ])
