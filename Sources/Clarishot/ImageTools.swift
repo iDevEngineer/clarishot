@@ -38,19 +38,62 @@ enum SensitiveDataFinder {
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false // keep keys and numbers exactly as written
         try? VNImageRequestHandler(cgImage: image).perform([request])
+        let lines = (request.results ?? []).compactMap { obs -> (VNRecognizedText, CGRect)? in
+            guard let candidate = obs.topCandidates(1).first else { return nil }
+            return (candidate, toPoints(obs.boundingBox, pointSize))
+        }
+
         var matches: [Match] = []
-        for observation in request.results ?? [] {
-            guard let candidate = observation.topCandidates(1).first else { continue }
+        func add(_ rect: CGRect, _ kind: String) {
+            let padded = rect.insetBy(dx: -3, dy: -3)
+            if !matches.contains(where: { $0.rect.intersects(padded) && $0.rect.intersection(padded).width > padded.width * 0.6 }) {
+                matches.append(Match(rect: padded, kind: kind))
+            }
+        }
+
+        for (candidate, lineRect) in lines {
             let text = candidate.string
+            // 1. Patterns: emails, keys, card numbers…
             for (range, kind) in sensitiveRanges(in: text) {
-                guard let box = try? candidate.boundingBox(for: range)?.boundingBox else { continue }
-                // Vision: normalised, bottom-left origin → image points, top-left origin.
-                let rect = CGRect(x: box.minX * pointSize.width, y: (1 - box.maxY) * pointSize.height,
-                                  width: box.width * pointSize.width, height: box.height * pointSize.height)
-                matches.append(Match(rect: rect.insetBy(dx: -3, dy: -3), kind: kind))
+                if let box = try? candidate.boundingBox(for: range)?.boundingBox { add(toPoints(box, pointSize), kind) }
+            }
+            // 2. "Password: hunter2" in one line: hide what follows the label.
+            if let label = labelMatch(in: text), label.upperBound < text.endIndex {
+                let value = text[label.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " :=\t"))
+                if !value.isEmpty, let range = text.range(of: value, range: label.upperBound..<text.endIndex),
+                   let box = try? candidate.boundingBox(for: range)?.boundingBox {
+                    add(toPoints(box, pointSize), "Labelled value")
+                }
+            }
+            // 3. A label on its own ("Password") with the value elsewhere on the same row.
+            guard isLabelOnly(text) else { continue }
+            for (other, otherRect) in lines where otherRect.minX > lineRect.maxX - 2 && other.string != text {
+                let sameRow = abs(otherRect.midY - lineRect.midY) < max(lineRect.height, otherRect.height) * 0.6
+                if sameRow { add(otherRect, "Labelled value") }
             }
         }
         return matches
+    }
+
+    /// Vision's normalised, bottom-left box → image points, top-left origin.
+    private static func toPoints(_ box: CGRect, _ size: CGSize) -> CGRect {
+        CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height, width: box.width * size.width,
+               height: box.height * size.height)
+    }
+
+    /// Words that mark the next value as private.
+    private static let labelPattern =
+        #"(?i)^\s*(pass ?word|passcode|pwd|pin( code)?|secret|api ?key|access ?key|private ?key|token|user ?name|username|login|e-?mail|account( number| no\.?)?|card( number)?|cvv|cvc|iban|sort code|routing( number)?|ssn|social security|national insurance|ni number|recovery (code|key)|seed phrase|one-?time code|otp)(?=\s|:|=|$)\s*[:=]?"#
+
+    private static func labelMatch(in text: String) -> Range<String.Index>? {
+        text.range(of: labelPattern, options: .regularExpression)
+    }
+
+    /// The whole line is just a label (allowing a trailing colon).
+    private static func isLabelOnly(_ text: String) -> Bool {
+        guard let range = labelMatch(in: text) else { return false }
+        let rest = text.replacingCharacters(in: range, with: "").trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return rest.isEmpty
     }
 
     static func findAsync(in image: CGImage, pointSize: CGSize) async -> [Match] {
