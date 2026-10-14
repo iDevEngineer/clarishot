@@ -108,40 +108,57 @@ final class PreviewPanel: NSPanel {
     private var slidesRight = false
     private var swipeStart: CGRect?
     private var swipeDistance: CGFloat = 0
+    private var swipeDismissed = false
+    private var swipeWatchdog: DispatchWorkItem?
 
-    /// Two-finger swipe toward the screen edge dismisses the card; a short swipe springs back.
+    /// Two-finger swipe toward the screen edge dismisses the card.
+    ///
+    /// The card moves at half the finger speed so it stays under the pointer (once the pointer
+    /// leaves the card, macOS stops sending it the swipe), and it closes as soon as the swipe is
+    /// far enough instead of waiting for the fingers to lift. If the swipe is lost it springs back.
     func handleSwipe(_ event: NSEvent) -> Bool {
-        guard event.phase != [] || swipeStart != nil else { return false } // ignore mouse wheels
-        switch event.phase {
-        case .began:
-            swipeStart = frame
+        guard event.phase != [] else { return swipeStart != nil } // swallow momentum, ignore mouse wheels
+        guard !swipeDismissed else { return true }
+        if event.phase == .began || swipeStart == nil {
+            swipeStart = swipeStart ?? frame
             swipeDistance = 0
-        case .changed:
-            guard let start = swipeStart else { return false }
-            // Finger movement, whatever the natural-scrolling setting.
-            let finger = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
-            swipeDistance += finger
-            let outward = slidesRight ? max(swipeDistance, 0) : min(swipeDistance, 0)
-            let resist = (slidesRight ? min(swipeDistance, 0) : max(swipeDistance, 0)) * 0.2 // a little give inward
-            setFrameOrigin(CGPoint(x: start.minX + outward + resist, y: start.minY))
-            alphaValue = max(0.3, 1 - abs(outward) / (start.width * 1.2))
-        case .ended, .cancelled:
-            guard let start = swipeStart else { return false }
-            swipeStart = nil
-            let outward = slidesRight ? swipeDistance : -swipeDistance
-            if event.phase == .ended, outward > 70 {
-                onDismiss?()
-            } else {
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.2
-                    animator().setFrame(start, display: true)
-                    animator().alphaValue = 1
-                }
-            }
-        default:
-            break
         }
+        guard let start = swipeStart else { return false }
+        let finger = event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+        swipeDistance += finger
+        let outward = slidesRight ? swipeDistance : -swipeDistance
+
+        if outward > 45 {
+            swipeDismissed = true
+            swipeWatchdog?.cancel()
+            onDismiss?()
+            return true
+        }
+        if event.phase == .ended || event.phase == .cancelled {
+            springBack(to: start)
+            return true
+        }
+        let shown = max(outward, -8) * 0.5 * (slidesRight ? 1 : -1)
+        setFrameOrigin(CGPoint(x: start.minX + shown, y: start.minY))
+        alphaValue = max(0.4, 1 - max(outward, 0) / 90)
+
+        // No "ended" arrives if the swipe is lost: spring back after a short pause.
+        swipeWatchdog?.cancel()
+        let watchdog = DispatchWorkItem { [weak self] in self?.springBack(to: start) }
+        swipeWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: watchdog)
         return true
+    }
+
+    private func springBack(to start: CGRect) {
+        swipeWatchdog?.cancel()
+        swipeStart = nil
+        guard !swipeDismissed else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            animator().setFrame(start, display: true)
+            animator().alphaValue = 1
+        }
     }
 
     func slideIn(to frame: CGRect, fromRight: Bool = false) {
@@ -398,7 +415,7 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     override func scrollWheel(with event: NSEvent) {
         // Mostly-horizontal trackpad swipes move the card; anything else is ignored.
-        if abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) || event.phase == .ended || event.phase == .cancelled,
+        if abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) || event.phase != .changed,
            (window as? PreviewPanel)?.handleSwipe(event) == true { return }
         super.scrollWheel(with: event)
     }
