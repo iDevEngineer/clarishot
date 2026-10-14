@@ -401,7 +401,7 @@ class SettingsPane: NSViewController {
             let text = NSTextField(wrappingLabelWithString: note)
             text.font = .systemFont(ofSize: 11)
             text.textColor = .secondaryLabelColor
-            text.preferredMaxLayoutWidth = 260
+            text.preferredMaxLayoutWidth = 360
             texts.append(text)
         }
         let column = NSStackView(views: texts)
@@ -536,15 +536,17 @@ final class GeneralPane: SettingsPane {
                                       toggle({ s.liquidGlass }, { s.liquidGlass = $0 })))
         }
         section("Startup", [
-            row("Launch at login", toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 })),
-            row("Show menu bar icon", toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }),
-                note: "When hidden, open Clarishot again from Finder to get back to Preferences.")
+            iconRow("power", "Launch at login", note: "Start Clarishot when you log in to your Mac",
+                    toggle({ s.launchAtLogin }, { s.launchAtLogin = $0 })),
+            iconRow("menubar.rectangle", "Show menu bar icon",
+                    note: "When hidden, open Clarishot again from Finder to get back to Preferences.",
+                    toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }))
         ])
         section("Appearance", appearance)
         section("Capture", [
-            row("Hide desktop icons while capturing",
-                toggle({ s.hideDesktopIconsWhileCapturing }, { s.hideDesktopIconsWhileCapturing = $0 }),
-                note: "You can set a custom wallpaper to hide desktop icons in Wallpaper settings.")
+            iconRow("eye.slash", "Hide desktop icons while capturing",
+                    note: "You can set a custom wallpaper to hide desktop icons in Wallpaper settings.",
+                    toggle({ s.hideDesktopIconsWhileCapturing }, { s.hideDesktopIconsWhileCapturing = $0 }))
         ])
         let sounds = CaptureSound.choices
         let shutter = popup(["System Default"] + sounds, selected: (sounds.firstIndex(of: s.shutterSound) ?? -1) + 1) {
@@ -553,11 +555,12 @@ final class GeneralPane: SettingsPane {
         }
         shutter.isEnabled = s.playSounds // greyed out while sounds are off, like the reference
         section("Sounds", [
-            row("Play sounds", toggle({ s.playSounds }, { on in
-                s.playSounds = on
-                shutter.isEnabled = on
-            })),
-            row("Shutter sound", shutter)
+            iconRow("speaker.wave.2", "Play sounds", note: "Play a sound after each capture",
+                    toggle({ s.playSounds }, { on in
+                        s.playSounds = on
+                        shutter.isEnabled = on
+                    })),
+            iconRow("camera.aperture", "Shutter sound", note: "The sound played when a screenshot is taken", shutter)
         ])
 
         // Like the reference's Storage row: folder icon, the folder's name underneath, Choose….
