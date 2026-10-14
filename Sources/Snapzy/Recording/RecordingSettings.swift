@@ -11,6 +11,8 @@ final class RecordingSettingsViewController: NSViewController {
     private var targets: [AnyObject] = []
     private static let width: CGFloat = 360
     private static let frameRates = [10, 15, 24, 25, 30, 48, 50, 60]
+    private static let gifFrameRates = [5, 10, 15, 20, 25, 30, 40, 50, 60]
+    private static let gifWidths = [1200, 960, 800, 640, 500, 480, 320, 256, 200]
 
     init(options: RecordingOptions, onChange: @escaping (RecordingOptions) -> Void) {
         self.options = options
@@ -57,10 +59,9 @@ final class RecordingSettingsViewController: NSViewController {
                 row("Microphone", control: devicePopup(Devices.microphones(), \.microphoneDeviceID))
             ]),
             section("GIF", [
-                row("Frame rate", control: popup(["10 fps", "15 fps", "20 fps", "30 fps"], values: [10, 15, 20, 30], \.gifFPS)),
-                row("Resolution", control: popup(["480 × auto", "640 × auto", "800 × auto (default)", "1024 × auto",
-                                                  "1280 × auto", "Original"],
-                                                 values: [480, 640, 800, 1024, 1280, 0], \.gifMaxWidth)),
+                row("Frame rate", control: popup(Self.gifFrameRates.map { "\($0) fps" }, values: Self.gifFrameRates, \.gifFPS)),
+                row("Resolution", control: popup(["Original", "-"] + Self.gifWidths.map { $0 == 800 ? "800 x auto (default)" : "\($0) x auto" },
+                                                 values: [0, 0] + Self.gifWidths, \.gifMaxWidth)),
                 row("Optimize GIFs", control: optionToggle(\.gifOptimize),
                     note: "Merges frames that don't change, for smaller files."),
                 row("Quality", control: qualitySlider())
@@ -240,11 +241,22 @@ final class RecordingSettingsViewController: NSViewController {
     }
 
     private func popup<T: Equatable>(_ titles: [String], values: [T], _ path: WritableKeyPath<RecordingOptions, T>) -> NSPopUpButton {
+        // A "-" title becomes a divider; items carry their value's index as a tag.
         let control = Self.plainPopup()
-        control.addItems(withTitles: titles)
-        control.selectItem(at: values.firstIndex(of: options[keyPath: path]) ?? 0)
+        control.removeAllItems()
+        for (index, title) in titles.enumerated() {
+            if title == "-" {
+                control.menu?.addItem(.separator())
+            } else {
+                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                item.tag = index
+                control.menu?.addItem(item)
+            }
+        }
+        let current = values.firstIndex(of: options[keyPath: path]) ?? 0
+        control.selectItem(withTag: current)
         let target = Callback { [unowned self] sender in
-            guard let index = (sender as? NSPopUpButton)?.indexOfSelectedItem, values.indices.contains(index) else { return }
+            guard let index = (sender as? NSPopUpButton)?.selectedItem?.tag, values.indices.contains(index) else { return }
             self.options[keyPath: path] = values[index]
             self.onChange(self.options)
         }
