@@ -29,10 +29,15 @@ if [ -f "$WEBP_LIB/libwebp.7.dylib" ]; then
     mkdir -p "$APP/Contents/Frameworks"
     cp "$WEBP_LIB/libwebp.7.dylib" "$WEBP_LIB/libsharpyuv.0.dylib" "$APP/Contents/Frameworks/"
     chmod u+w "$APP/Contents/Frameworks/"*.dylib
-    install_name_tool -id @rpath/libsharpyuv.0.dylib "$APP/Contents/Frameworks/libsharpyuv.0.dylib" 2>/dev/null
-    install_name_tool -id @rpath/libwebp.7.dylib "$APP/Contents/Frameworks/libwebp.7.dylib" 2>/dev/null
+    install_name_tool -id @rpath/libsharpyuv.0.dylib "$APP/Contents/Frameworks/libsharpyuv.0.dylib"
+    install_name_tool -id @rpath/libwebp.7.dylib "$APP/Contents/Frameworks/libwebp.7.dylib"
     install_name_tool -change @rpath/libsharpyuv.0.dylib @loader_path/libsharpyuv.0.dylib \
-        "$APP/Contents/Frameworks/libwebp.7.dylib" 2>/dev/null
+        "$APP/Contents/Frameworks/libwebp.7.dylib"
+    # Refuse to ship a library that still points outside the app (e.g. into /opt/homebrew).
+    if otool -L "$APP/Contents/Frameworks/"*.dylib | grep -q "/opt/homebrew"; then
+        echo "error: bundled WebP library still links to /opt/homebrew" >&2
+        exit 1
+    fi
     for lib in "$APP/Contents/Frameworks/"*.dylib; do codesign --force --sign "$SIGN_IDENTITY" "$lib"; done
 fi
 
