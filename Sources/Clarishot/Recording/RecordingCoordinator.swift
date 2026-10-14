@@ -13,6 +13,8 @@ final class RecordingCoordinator {
     private var controlBar: RecordingControlBar?
     private var camera: CameraBubble?
     private var clicks: ClickHighlightWindow?
+    /// Draw on screen: a see-through layer over the area that is part of the video.
+    private var drawWindow: ScreenDrawWindow?
     /// Clicks inside the recorded area, for automatic zooms in the zoom editor.
     private var clickLog = PointerLog()
     private var clickMonitor: Any?
@@ -242,6 +244,13 @@ final class RecordingCoordinator {
             keys = window
         }
         if let keys { included.append(keys) }
+        if drawWindow == nil {
+            let draw = ScreenDrawWindow(rect: globalRect)
+            draw.onDrawingChange = { [weak self] on in self?.controlBar?.setDrawing(on) }
+            draw.orderFrontRegardless()
+            drawWindow = draw
+        }
+        if let drawWindow { included.append(drawWindow) }
 
         let recorder = ScreenRecorder(screen: region.screen, rect: region.rect, options: options)
         recorder.includedWindows = included
@@ -275,6 +284,7 @@ final class RecordingCoordinator {
             bar.onPauseToggle = { [weak self] in self?.togglePause() }
             bar.onRestart = { [weak self] in self?.restart() }
             bar.onDiscard = { [weak self] in self?.discard() }
+            bar.onDraw = { [weak self] in self?.toggleDrawing() }
             bar.place(below: globalRect, on: region.screen)
             bar.orderFrontRegardless()
             controlBar = bar
@@ -315,6 +325,15 @@ final class RecordingCoordinator {
                                                    y: (area.maxY - p.y) / area.height))
             }
         }
+    }
+
+    /// Turns drawing on or off (pencil on the control bar, or the Draw on Screen shortcut).
+    func toggleDrawing() {
+        guard let drawWindow, recorder != nil else {
+            Toast.show("Start a recording to draw on screen")
+            return
+        }
+        drawWindow.toggle()
     }
 
     func togglePause() {
@@ -426,6 +445,8 @@ final class RecordingCoordinator {
         clicks = nil
         keys?.stopMonitoring()
         keys = nil
+        drawWindow?.close(clearing: true)
+        drawWindow = nil
         hideCamera()
         closeSetupWindows()
         region = nil

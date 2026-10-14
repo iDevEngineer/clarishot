@@ -95,6 +95,7 @@ Every shortcut can be changed or turned off in **Preferences → Shortcuts**. Th
 | Capture Window | ⌥⇧⌘5 |
 | Smart Capture | ⌥⇧⌘E |
 | Capture Menu or Popover | ⌥⇧⌘M |
+| Draw on Screen (while recording) | ⌥⇧⌘D |
 | Capture Object (cutout) | ⌥⇧⌘1 |
 | Capture & Annotate | ⌥⇧⌘7 |
 | Capture Text (OCR) | ⌥⇧⌘2 |

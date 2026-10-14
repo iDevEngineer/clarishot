@@ -160,6 +160,13 @@ started on text run straight along the line. Hold **⌘** while dragging to turn
    **delete**. The menu-bar icon becomes a red stop button with a timer.
 5. When you stop, a preview card appears. The scissors button trims the recording.
 
+### Draw on screen
+While recording, click the **pencil** on the control bar (or press **⌥⇧⌘D**) to draw over the
+recorded area; the drawing is part of the video. A small toolbar (not recorded) has **pen**,
+**highlighter**, **arrow** and **rectangle**, five colours, **fade** (strokes disappear after a few
+seconds), **undo** (⌘Z), **clear** and **✓**. Press **Esc** or ✓ to go back to using your apps;
+strokes stay on screen until you clear them (unless fade is on).
+
 ### Zooms
 Click the **magnifying glass** on a recording's preview card (or **Edit Zooms…** in Capture
 History's right-click menu). Clarishot noted every click you made while recording, and places a

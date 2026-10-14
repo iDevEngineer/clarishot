@@ -203,12 +203,14 @@ final class RecordingControlBar: NSPanel {
     var onPauseToggle: (() -> Void)?
     var onRestart: (() -> Void)?
     var onDiscard: (() -> Void)?
+    var onDraw: (() -> Void)?
 
+    private let drawButton = PanelIconButton(symbol: "pencil.tip", tip: "Draw on screen (⌥⇧⌘D)")
     private let timeLabel = NSTextField(labelWithString: "0:00")
     private let pauseButton = PanelIconButton(symbol: "pause.fill", tip: "Pause recording")
 
     init() {
-        super.init(contentRect: CGRect(x: 0, y: 0, width: 220, height: 44),
+        super.init(contentRect: CGRect(x: 0, y: 0, width: 256, height: 44),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .screenSaver
@@ -238,7 +240,8 @@ final class RecordingControlBar: NSPanel {
         let discard = PanelIconButton(symbol: "trash", tip: "Discard recording")
         discard.onClick = { [weak self] in self?.onDiscard?() }
 
-        let stack = NSStackView(views: [stop, timeLabel, NSView(), pauseButton, restart, discard])
+        drawButton.onClick = { [weak self] in self?.onDraw?() }
+        let stack = NSStackView(views: [stop, timeLabel, NSView(), drawButton, pauseButton, restart, discard])
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -250,6 +253,12 @@ final class RecordingControlBar: NSPanel {
             stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)
         ])
         contentView = outer
+    }
+
+    /// Highlights the pencil while drawing is on.
+    func setDrawing(_ on: Bool) {
+        drawButton.layer?.backgroundColor = on ? NSColor.white.withAlphaComponent(0.25).cgColor : nil
+        drawButton.contentTintColor = on ? .systemYellow : nil
     }
 
     func update(elapsed: TimeInterval, paused: Bool) {

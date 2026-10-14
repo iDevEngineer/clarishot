@@ -661,7 +661,7 @@ final class ShortcutsPane: SettingsPane, NSSearchFieldDelegate {
             ("Screenshots", "camera", [[.captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow,
                                         .smartCapture, .objectCutout, .captureMenu, .selfTimer],
                                        [.captureAreaCopy, .captureAreaSave, .captureAreaAnnotate, .captureAreaPin]]),
-            ("Screen Recording", "video", [[.recordScreen, .pauseRecording]]),
+            ("Screen Recording", "video", [[.recordScreen, .pauseRecording, .drawOnScreen]]),
             ("Scrolling Capture", "arrow.down", [[.scrollingCapture]]),
             ("OCR", "text.viewfinder", [[.captureText]])
         ]
