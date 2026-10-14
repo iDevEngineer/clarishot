@@ -71,7 +71,11 @@ final class SelectionOverlayController {
         let keyWindow = windows.first { $0.frame.contains(mouse) } ?? windows.first
         keyWindow?.makeKey()
         keyWindow?.makeFirstResponder(keyWindow?.contentView)
-        CrosshairCursor.shared.set()
+        if let view = keyWindow?.contentView as? OverlayView, view.isWindowMode {
+            CameraCursor.shared.set()
+        } else {
+            CrosshairCursor.shared.set()
+        }
     }
 
     /// Returns true if the key was used (and should not reach other apps).
@@ -199,7 +203,9 @@ final class OverlayView: NSView {
                                        owner: self))
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: CrosshairCursor.shared) }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: mode == .window ? CameraCursor.shared : CrosshairCursor.shared)
+    }
     override func cursorUpdate(with event: NSEvent) { updateCursor() }
 
     // MARK: Mouse and keys
@@ -327,6 +333,8 @@ final class OverlayView: NSView {
 
     // MARK: All-In-One
 
+    var isWindowMode: Bool { mode == .window }
+
     func setSpaceHeld(_ held: Bool) { spaceHeld = held }
 
     /// Return in All-In-One / scrolling selection; false if there's nothing to confirm.
@@ -448,6 +456,10 @@ final class OverlayView: NSView {
     }
 
     private func updateCursor() {
+        if mode == .window {
+            CameraCursor.shared.set()
+            return
+        }
         guard editable, let rect = selection, let mouse, case .none = interaction else {
             CrosshairCursor.shared.set()
             return
@@ -877,6 +889,37 @@ final class KeyTap {
     deinit {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+    }
+}
+
+/// Camera pointer for picking a window, like macOS's own window screenshot.
+@MainActor
+enum CameraCursor {
+    static let shared: NSCursor = {
+        let size: CGFloat = 32
+        let image = NSImage(size: CGSize(width: size, height: size), flipped: false) { rect in
+            let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .medium)
+            guard let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) else { return false }
+            let s = symbol.size
+            let at = CGRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height)
+            // Dark outline under a white camera so it shows on any background.
+            for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
+                tinted(symbol, .black.withAlphaComponent(0.6)).draw(in: at.offsetBy(dx: dx, dy: dy))
+            }
+            tinted(symbol, .white).draw(in: at)
+            return true
+        }
+        return NSCursor(image: image, hotSpot: CGPoint(x: size / 2, y: size / 2))
+    }()
+
+    private static func tinted(_ image: NSImage, _ color: NSColor) -> NSImage {
+        NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
     }
 }
 

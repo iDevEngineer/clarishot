@@ -110,10 +110,10 @@ final class PinWindow: NSPanel {
         }
     }
 
-    /// Shrinks very large captures so the pin fits comfortably on screen.
+    /// 90% of the original size, shrunk further only if it would fill more than 85% of the screen.
     private static func fittedSize(_ size: CGSize) -> CGSize {
         let limit = (NSScreen.main?.visibleFrame.size ?? CGSize(width: 1200, height: 800))
-        let scale = min(1, limit.width * 0.6 / size.width, limit.height * 0.6 / size.height)
+        let scale = min(0.9, limit.width * 0.85 / size.width, limit.height * 0.85 / size.height)
         return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
     }
 }
