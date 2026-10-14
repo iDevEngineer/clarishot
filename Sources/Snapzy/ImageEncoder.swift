@@ -41,10 +41,11 @@ private enum WebP {
                                                        UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>) -> Int
     private typealias Free = @convention(c) (UnsafeMutableRawPointer?) -> Void
 
+    /// Only the signed copy inside the app. Never load from a user-writable folder such as Homebrew's:
+    /// that code would run with Snapzy's Screen Recording and Accessibility permissions.
     private static let library: UnsafeMutableRawPointer? = {
-        let candidates = [Bundle.main.privateFrameworksURL?.appendingPathComponent("libwebp.7.dylib").path,
-                          "/opt/homebrew/opt/webp/lib/libwebp.7.dylib"].compactMap { $0 }
-        return candidates.lazy.compactMap { dlopen($0, RTLD_NOW) }.first
+        guard let path = Bundle.main.privateFrameworksURL?.appendingPathComponent("libwebp.7.dylib").path else { return nil }
+        return dlopen(path, RTLD_NOW)
     }()
 
     static var isAvailable: Bool { library != nil }
