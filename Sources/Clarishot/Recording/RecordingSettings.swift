@@ -265,7 +265,7 @@ final class RecordingSettingsViewController: NSViewController {
     // MARK: Mouse highlight
 
     private var highlightControls: (size: NSSlider, duration: NSSlider, count: NSStepper, countLabel: NSTextField,
-                                    color: NSColorWell, opacity: NSSlider, labels: [NSTextField])?
+                                    color: OklchColorButton, opacity: NSSlider, labels: [NSTextField])?
 
     /// Size, speed, ring count, colour and opacity of the click highlight, plus Reset.
     private func mouseHighlightSection() -> NSView {
@@ -325,19 +325,11 @@ final class RecordingSettingsViewController: NSViewController {
         count.target = countTarget
         count.action = #selector(Callback.fire(_:))
 
-        let well = NSColorWell(style: .minimal)
-        well.color = options.clickNSColor
-        well.translatesAutoresizingMaskIntoConstraints = false
-        well.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        well.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        let wellTarget = Callback { [unowned self] sender in
-            guard let color = (sender as? NSColorWell)?.color else { return }
-            self.options.clickCustomColor = color.hexString
+        let well = OklchColorButton(color: options.clickNSColor)
+        well.onChange = { [unowned self] color in
+            self.options.clickCustomColor = color.p3String
             self.onChange(self.options)
         }
-        targets.append(wellTarget)
-        well.target = wellTarget
-        well.action = #selector(Callback.fire(_:))
 
         highlightControls = (size, duration, count, countLabel, well, opacity, [sizeLabel, durationLabel, opacityLabel])
 

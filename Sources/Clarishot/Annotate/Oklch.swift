@@ -184,3 +184,114 @@ final class OklchPickerView: NSView {
         }
     }
 }
+
+/// A colour swatch button that opens the OKLCH picker in a popover. Used wherever Clarishot
+/// lets you choose a colour outside the editor's own palette.
+final class OklchColorButton: NSButton {
+    var color: NSColor { didSet { needsDisplay = true } }
+    /// Called live while the sliders move.
+    var onChange: ((NSColor) -> Void)?
+    private var popover: NSPopover?
+
+    init(color: NSColor, size: CGSize = CGSize(width: 44, height: 22)) {
+        self.color = color
+        super.init(frame: .zero)
+        isBordered = false
+        title = ""
+        toolTip = "Choose a colour (OKLCH)"
+        target = self
+        action = #selector(open)
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: size.width).isActive = true
+        heightAnchor.constraint(equalToConstant: size.height).isActive = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        color.setFill()
+        shape.fill()
+        NSColor.separatorColor.setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+    }
+
+    @objc private func open() {
+        let picker = OklchPickerView()
+        picker.setColor(color)
+        picker.onChange = { [weak self] new in
+            self?.color = new
+            self?.onChange?(new)
+        }
+        picker.onUse = { [weak self] new in
+            self?.color = new
+            self?.onChange?(new)
+            self?.popover?.close()
+        }
+        let controller = NSViewController()
+        let container = NSView()
+        picker.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(picker)
+        NSLayoutConstraint.activate([
+            picker.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            picker.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            picker.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            picker.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+        controller.view = container
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        popover.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        self.popover = popover
+    }
+}
+
+extension NSColor {
+    /// Saved form that keeps wide-gamut colours: "P3 r g b".
+    var p3String: String {
+        let c = usingColorSpace(.displayP3) ?? self
+        return String(format: "P3 %.4f %.4f %.4f", c.redComponent, c.greenComponent, c.blueComponent)
+    }
+
+    /// Reads "P3 r g b" (or an older "#RRGGBB").
+    convenience init?(saved: String) {
+        if saved.hasPrefix("P3 ") {
+            let parts = saved.dropFirst(3).split(separator: " ").compactMap { Double($0) }
+            guard parts.count == 3 else { return nil }
+            self.init(displayP3Red: parts[0], green: parts[1], blue: parts[2], alpha: 1)
+        } else {
+            self.init(hex: saved)
+        }
+    }
+}
+
+extension NSColor {
+    /// A colour from OKLCH values (lightness 0–1, chroma, hue in degrees), in Display P3.
+    convenience init(oklch lightness: Double, _ chroma: Double, _ hue: Double) {
+        let c = Oklch(lightness: lightness, chroma: chroma, hue: hue).color
+        self.init(displayP3Red: c.redComponent, green: c.greenComponent, blue: c.blueComponent, alpha: 1)
+    }
+}
+
+/// Clarishot's built-in colours, defined in OKLCH so they share even lightness and vividness,
+/// and come out in Display P3 (richer than the standard system colours on Mac screens).
+enum OklchPalette {
+    static let red = NSColor(oklch: 0.63, 0.25, 27)
+    static let orange = NSColor(oklch: 0.73, 0.19, 50)
+    static let yellow = NSColor(oklch: 0.88, 0.18, 95)
+    static let green = NSColor(oklch: 0.72, 0.21, 145)
+    static let blue = NSColor(oklch: 0.60, 0.21, 258)
+    static let purple = NSColor(oklch: 0.58, 0.24, 300)
+    static let pink = NSColor(oklch: 0.67, 0.23, 352)
+    static let gray = NSColor(oklch: 0.60, 0, 0)
+    static let black = NSColor(oklch: 0.16, 0, 0)
+    static let white = NSColor(oklch: 1, 0, 0)
+
+    /// The editor's swatches, in order, with their names.
+    static let annotate: [(color: NSColor, name: String)] = [
+        (red, "Red"), (orange, "Orange"), (yellow, "Yellow"), (green, "Green"),
+        (blue, "Blue"), (purple, "Purple"), (black, "Black"), (white, "White")
+    ]
+}

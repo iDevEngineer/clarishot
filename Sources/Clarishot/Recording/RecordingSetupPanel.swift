@@ -27,7 +27,7 @@ struct RecordingOptions {
     var clickDuration = 0.5      // seconds for one ripple
     var clickRipples = 1         // rings per click, 1 … 5
     var clickOpacity = 1.0       // 0.1 … 1
-    var clickCustomColor: String? // "#RRGGBB" from the colour well; overrides clickColor
+    var clickCustomColor: String? // "P3 r g b" (or older "#RRGGBB") from the OKLCH picker; overrides clickColor
     var keystrokePosition = 4    // index into keystrokePositions (4 = Bottom-Center)
     var keystrokeScale = 0.5     // 0 … 1, see keystrokeFontSize
     var keystrokesBlur = true
@@ -45,12 +45,12 @@ struct RecordingOptions {
     ]
 
     static let clickColors: [(name: String, color: NSColor)] = [
-        ("System Accent color", .controlAccentColor), ("Blue", .systemBlue), ("Purple", .systemPurple),
-        ("Pink", .systemPink), ("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow),
-        ("Green", .systemGreen), ("Gray", .systemGray)
+        ("System Accent color", .controlAccentColor), ("Blue", OklchPalette.blue), ("Purple", OklchPalette.purple),
+        ("Pink", OklchPalette.pink), ("Red", OklchPalette.red), ("Orange", OklchPalette.orange), ("Yellow", OklchPalette.yellow),
+        ("Green", OklchPalette.green), ("Gray", OklchPalette.gray)
     ]
     var clickNSColor: NSColor {
-        if let hex = clickCustomColor, let color = NSColor(hex: hex) { return color }
+        if let saved = clickCustomColor, let color = NSColor(saved: saved) { return color }
         return Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color
     }
     var clickDiameter: CGFloat { 24 + CGFloat(min(max(clickScale, 0), 1)) * 56 }

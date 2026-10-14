@@ -22,9 +22,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private static let colors: [NSColor] = [
-        .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue, .systemPurple, .black, .white
-    ]
+    private static let colors: [NSColor] = OklchPalette.annotate.map(\.color)
     private static let widths: [CGFloat] = [2, 4, 8]
     private static let toolbarHeight: CGFloat = 52
 
@@ -32,7 +30,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
     private let window: AnnotateWindow
     private let canvas: CanvasView
     private var toolButtons: [Tool: ToolButton] = [:]
-    private let colorButton = ColorSwatchButton(color: .systemRed)
+    private let colorButton = ColorSwatchButton(color: OklchPalette.red)
     private let widthButton = ToolButton(symbol: "line.3.horizontal", tip: "Line width")
     private let undoButton = ToolButton(symbol: "arrow.uturn.backward", tip: "Undo (⌘Z)")
     private let redoButton = ToolButton(symbol: "arrow.uturn.forward", tip: "Redo (⇧⌘Z)")
@@ -1070,10 +1068,7 @@ final class ColorPaletteViewController: NSViewController {
 
     /// A plain name for a colour, e.g. "Red" or "#3A7BFF" for custom ones.
     static func name(of color: NSColor) -> String {
-        let named: [(NSColor, String)] = [(.systemRed, "Red"), (.systemOrange, "Orange"), (.systemYellow, "Yellow"),
-                                          (.systemGreen, "Green"), (.systemBlue, "Blue"), (.systemPurple, "Purple"),
-                                          (.black, "Black"), (.white, "White")]
-        if let match = named.first(where: { $0.0 == color }) { return match.1 }
+        if let match = OklchPalette.annotate.first(where: { $0.color == color }) { return match.name }
         guard let c = color.usingColorSpace(.sRGB) else { return "Custom" }
         return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }

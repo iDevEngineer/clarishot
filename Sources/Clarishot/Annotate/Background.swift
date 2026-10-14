@@ -7,15 +7,16 @@ enum BackgroundFill {
     case solid(NSColor)
     case wallpaper
 
+    /// Defined in OKLCH (lightness, chroma, hue) and drawn in Display P3.
     static let presets: [BackgroundFill] = [
-        .gradient(NSColor(srgbRed: 0.98, green: 0.45, blue: 0.53, alpha: 1), NSColor(srgbRed: 0.99, green: 0.74, blue: 0.40, alpha: 1)),
-        .gradient(NSColor(srgbRed: 0.40, green: 0.49, blue: 0.98, alpha: 1), NSColor(srgbRed: 0.74, green: 0.40, blue: 0.95, alpha: 1)),
-        .gradient(NSColor(srgbRed: 0.20, green: 0.80, blue: 0.75, alpha: 1), NSColor(srgbRed: 0.25, green: 0.47, blue: 0.95, alpha: 1)),
-        .gradient(NSColor(srgbRed: 0.55, green: 0.88, blue: 0.45, alpha: 1), NSColor(srgbRed: 0.13, green: 0.65, blue: 0.55, alpha: 1)),
-        .gradient(NSColor(srgbRed: 0.99, green: 0.86, blue: 0.40, alpha: 1), NSColor(srgbRed: 0.98, green: 0.55, blue: 0.25, alpha: 1)),
-        .gradient(NSColor(srgbRed: 0.18, green: 0.20, blue: 0.27, alpha: 1), NSColor(srgbRed: 0.40, green: 0.43, blue: 0.53, alpha: 1)),
-        .solid(NSColor(srgbRed: 0.95, green: 0.95, blue: 0.96, alpha: 1)),
-        .solid(NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1)),
+        .gradient(NSColor(oklch: 0.70, 0.17, 10), NSColor(oklch: 0.84, 0.13, 65)),    // pink → peach
+        .gradient(NSColor(oklch: 0.60, 0.20, 270), NSColor(oklch: 0.62, 0.22, 310)),  // blue → violet
+        .gradient(NSColor(oklch: 0.77, 0.13, 185), NSColor(oklch: 0.58, 0.19, 262)),  // teal → blue
+        .gradient(NSColor(oklch: 0.84, 0.18, 135), NSColor(oklch: 0.62, 0.12, 175)),  // green → teal
+        .gradient(NSColor(oklch: 0.90, 0.15, 95), NSColor(oklch: 0.73, 0.17, 50)),    // yellow → orange
+        .gradient(NSColor(oklch: 0.27, 0.02, 265), NSColor(oklch: 0.48, 0.03, 265)),  // slate
+        .solid(NSColor(oklch: 0.96, 0.003, 265)),                                     // light
+        .solid(NSColor(oklch: 0.19, 0.004, 265)),                                     // dark
         .wallpaper
     ]
 
@@ -28,7 +29,8 @@ enum BackgroundFill {
             ctx.fill(rect)
         case .gradient(let a, let b):
             let colors = [a.cgColor, b.cgColor] as CFArray
-            guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1])
+            // Display P3 so wide-gamut custom colours keep their vividness.
+            guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.displayP3), colors: colors, locations: [0, 1])
             else { return }
             let top = flipped ? rect.minY : rect.maxY
             let bottom = flipped ? rect.maxY : rect.minY
@@ -149,7 +151,18 @@ struct BackgroundStyle: Codable, Equatable {
         ("Auto", nil), ("1:1 Square", 1), ("4:3", 4.0 / 3), ("16:9", 16.0 / 9), ("9:16 Portrait", 9.0 / 16)
     ]
 
-    var fill: BackgroundFill { BackgroundFill.presets[min(max(fillIndex, 0), BackgroundFill.presets.count - 1)] }
+    /// Custom colours chosen with the OKLCH picker (saved as P3); used when `fillIndex` is -1.
+    var customFrom: String?
+    var customTo: String?
+
+    var fill: BackgroundFill {
+        if fillIndex < 0 {
+            let from = customFrom.flatMap(NSColor.init(saved:)) ?? .systemIndigo
+            let to = customTo.flatMap(NSColor.init(saved:)) ?? from
+            return from == to ? .solid(from) : .gradient(from, to)
+        }
+        return BackgroundFill.presets[min(max(fillIndex, 0), BackgroundFill.presets.count - 1)]
+    }
 
     /// Space left and right (width) and above and below (height) the content,
     /// widened on one side if needed to reach the chosen aspect ratio.
@@ -288,7 +301,19 @@ final class BackgroundViewController: NSViewController {
         let row1 = NSStackView(views: Array(swatches.prefix(5)))
         let row2 = NSStackView(views: Array(swatches.dropFirst(5)))
         for row in [row1, row2] { row.spacing = 6 }
-        let grid = NSStackView(views: [row1, row2])
+        // Custom: any two colours (or the same one twice for a solid) from the OKLCH picker.
+        let from = OklchColorButton(color: style.customFrom.flatMap(NSColor.init(saved:)) ?? .systemIndigo,
+                                    size: CGSize(width: 36, height: 22))
+        let to = OklchColorButton(color: style.customTo.flatMap(NSColor.init(saved:)) ?? .systemPink,
+                                  size: CGSize(width: 36, height: 22))
+        from.onChange = { [weak self, weak to] color in self?.pickCustom(from: color, to: to?.color) }
+        to.onChange = { [weak self, weak from] color in self?.pickCustom(from: from?.color, to: color) }
+        let customLabel = label("Custom")
+        let arrow = NSImageView(image: NSImage(systemSymbolName: "arrow.right", accessibilityDescription: nil) ?? NSImage())
+        arrow.contentTintColor = .tertiaryLabelColor
+        let row3 = NSStackView(views: [customLabel, from, arrow, to])
+        row3.spacing = 6
+        let grid = NSStackView(views: [row1, row2, row3])
         grid.orientation = .vertical
         grid.alignment = .leading
         grid.spacing = 6
@@ -392,6 +417,17 @@ final class BackgroundViewController: NSViewController {
     private func update(_ change: (inout BackgroundStyle) -> Void) {
         change(&style)
         onChange(style)
+    }
+
+    private func pickCustom(from: NSColor?, to: NSColor?) {
+        for s in swatches { s.isSelected = false }
+        update {
+            $0.fillIndex = -1
+            $0.customFrom = (from ?? .systemIndigo).p3String
+            $0.customTo = (to ?? from ?? .systemIndigo).p3String
+            $0.enabled = true
+        }
+        toggle.state = .on
     }
 
     private func pickFill(_ index: Int) {

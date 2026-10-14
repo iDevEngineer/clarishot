@@ -8,7 +8,7 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     var tool: Tool = .arrow {
         didSet { commitText(); selectedIndex = nil; needsDisplay = true; window?.invalidateCursorRects(for: self) }
     }
-    var color: NSColor = .systemRed
+    var color: NSColor = OklchPalette.red
     var lineWidth: CGFloat = 4
     var arrowStyle: ArrowStyle = .straight
     var textStyle: TextStyle = .outline
