@@ -126,8 +126,9 @@ final class SettingsSplitController: NSViewController {
         top.orientation = .vertical
         top.spacing = 10
         top.alignment = .leading
-        for tab in SettingsTab.allCases where tab != .about { top.addArrangedSubview(button(for: tab)) }
-        let about = button(for: .about)
+        for tab in SettingsTab.allCases { top.addArrangedSubview(button(for: tab)) }
+        // Bottom of the sidebar: the app's icon, name and version; clicking opens About.
+        let about = AppBadge { [weak self] in self?.select(.about) }
         for view in [top, about] {
             view.translatesAutoresizingMaskIntoConstraints = false
             sidebar.addSubview(view)
@@ -144,9 +145,9 @@ final class SettingsSplitController: NSViewController {
             top.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 46),
             top.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 8),
             top.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
-            about.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -8),
-            about.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 8),
-            about.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
+            about.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -14),
+            about.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
+            about.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -16),
             content.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 8),
             content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             content.topAnchor.constraint(equalTo: root.topAnchor),
@@ -1136,6 +1137,45 @@ final class ThemeTile: NSView {
             column.leadingAnchor.constraint(equalTo: leadingAnchor), column.trailingAnchor.constraint(equalTo: trailingAnchor),
             column.topAnchor.constraint(equalTo: topAnchor), column.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func mouseDown(with event: NSEvent) { onClick() }
+}
+
+/// Sidebar footer: app icon, "Clarishot" and the version. Clicking opens About.
+final class AppBadge: NSView {
+    private let onClick: () -> Void
+
+    init(onClick: @escaping () -> Void) {
+        self.onClick = onClick
+        super.init(frame: .zero)
+        let icon = NSImageView(image: AppIcon.current)
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 34).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        let name = NSTextField(labelWithString: "Clarishot")
+        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        let info = Bundle.main.infoDictionary
+        let version = NSTextField(labelWithString: "Version \(info?["CFBundleShortVersionString"] as? String ?? "–")")
+        version.font = .systemFont(ofSize: 11)
+        version.textColor = .secondaryLabelColor
+        let text = NSStackView(views: [name, version])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
+        let stack = NSStackView(views: [icon, text])
+        stack.spacing = 8
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        toolTip = "About Clarishot"
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
