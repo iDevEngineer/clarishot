@@ -7,7 +7,19 @@ final class CaptureCoordinator {
     static let shared = CaptureCoordinator()
 
     private var overlay: SelectionOverlayController?
-    private var lastArea: (displayID: CGDirectDisplayID, rect: CGRect)?
+    /// The last area captured. Saved, so Capture Previous Area works after Snapzy restarts.
+    private var lastArea: (displayID: CGDirectDisplayID, rect: CGRect)? {
+        get {
+            guard let d = UserDefaults.standard.dictionary(forKey: "lastCaptureArea"),
+                  let id = d["display"] as? UInt32, let rect = d["rect"] as? String else { return nil }
+            return (id, NSRectFromString(rect))
+        }
+        set {
+            guard let newValue else { UserDefaults.standard.removeObject(forKey: "lastCaptureArea"); return }
+            UserDefaults.standard.set(["display": newValue.displayID, "rect": NSStringFromRect(newValue.rect)],
+                                      forKey: "lastCaptureArea")
+        }
+    }
     /// All-In-One remembers its last selection.
     private var lastAllInOne: (displayID: CGDirectDisplayID, rect: CGRect)?
 
@@ -137,12 +149,19 @@ final class CaptureCoordinator {
     }
 
     func capturePreviousArea() {
-        guard let lastArea else { return }
+        // Nothing captured yet: pick an area instead (it becomes the previous area).
+        guard let lastArea else { return captureArea() }
         Task {
+            // Let the menu (if it was used) finish fading so it isn't in the shot.
+            try? await Task.sleep(nanoseconds: 150_000_000)
             do {
                 let shots = try await ScreenCapturer.captureAllScreens()
+                // The screen it was on may be unplugged; then pick a new area.
                 guard let shot = shots.first(where: { ScreenCapturer.displayID(for: $0.screen) == lastArea.displayID }),
-                      let image = ScreenCapturer.crop(shot, to: lastArea.rect) else { return }
+                      let image = ScreenCapturer.crop(shot, to: lastArea.rect) else {
+                    Toast.show("That screen isn't connected. Select an area.")
+                    return captureArea()
+                }
                 deliver(Capture(image: image, scale: shot.screen.backingScaleFactor)
                     .from(SourceApp.under(lastArea.rect, on: shot.screen)))
             } catch {

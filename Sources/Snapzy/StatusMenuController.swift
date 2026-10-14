@@ -88,7 +88,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         for (item, action) in actionItems { applyShortcut(to: item, action) }
         restoreItem?.isEnabled = PreviewManager.shared.canRestore
-        previousAreaItem?.isEnabled = CaptureCoordinator.shared.hasPreviousArea
         let hiding = DesktopIconHider.shared.isHiding
         desktopIconsItem?.title = hiding ? "Show Desktop Icons" : "Hide Desktop Icons"
         desktopIconsItem?.image = NSImage(systemSymbolName: hiding ? "eye" : "eye.slash", accessibilityDescription: nil)?
