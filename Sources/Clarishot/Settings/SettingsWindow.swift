@@ -359,6 +359,9 @@ class SettingsPane: NSViewController {
 
     /// Title (and optional grey note) on the left, control on the right.
     func row(_ title: String, _ control: NSView?, note: String? = nil) -> NSView {
+        if let control, let symbol = PreferenceIcons.symbol(for: title) {
+            return iconRow(symbol, title, note: note, control)
+        }
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13)
         let top = NSStackView(views: [label, NSView()] + (control.map { [$0] } ?? []))
@@ -401,7 +404,8 @@ class SettingsPane: NSViewController {
             let text = NSTextField(wrappingLabelWithString: note)
             text.font = .systemFont(ofSize: 11)
             text.textColor = .secondaryLabelColor
-            text.preferredMaxLayoutWidth = 360
+            // Wrap within the space the control leaves (wide controls like picture tiles need more room).
+            text.preferredMaxLayoutWidth = max(180, min(360, 470 - control.fittingSize.width))
             texts.append(text)
         }
         let column = NSStackView(views: texts)
@@ -716,7 +720,7 @@ final class QuickAccessPane: SettingsPane {
         section(nil, [
             row("Close after dragging", toggle({ s.closePreviewAfterDragging }, { s.closePreviewAfterDragging = $0 }),
                 note: "Closes the overlay once you drag the capture into another app."),
-            row("Save button behavior", popup(["Save to “Export location”", "Ask where to save"],
+            row("Save button behavior", popup(["Save to “Save location”", "Ask where to save"],
                                               selected: s.saveButtonAsks ? 1 : 0) { s.saveButtonAsks = $0 == 1 })
         ])
     }

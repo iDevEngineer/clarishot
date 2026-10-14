@@ -134,6 +134,10 @@ final class RecordingSettingsViewController: NSViewController {
 
     /// Title (and optional grey note) on the left, control on the right.
     private func row(_ title: String, control: NSView, note: String? = nil) -> NSView {
+        // In Preferences, rows get the same leading icon as the other tabs.
+        if embedded, let symbol = PreferenceIcons.symbol(for: title) {
+            return iconRow(symbol, title, note: note, control)
+        }
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13)
         let top = NSStackView(views: [label, NSView(), control])
@@ -157,6 +161,42 @@ final class RecordingSettingsViewController: NSViewController {
         stack.setHuggingPriority(.required, for: .vertical)
         stack.setContentCompressionResistancePriority(.required, for: .vertical)
         return stack
+    }
+
+    private func iconRow(_ symbol: String, _ title: String, note: String?, _ control: NSView) -> NSView {
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: 16, weight: .regular)
+        icon.contentTintColor = .secondaryLabelColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        var texts: [NSView] = [label]
+        if let note {
+            let text = NSTextField(wrappingLabelWithString: note)
+            text.font = .systemFont(ofSize: 11)
+            text.textColor = .secondaryLabelColor
+            // Wrap within the space the control leaves (wide controls like picture tiles need more room).
+            text.preferredMaxLayoutWidth = max(180, min(360, 470 - control.fittingSize.width))
+            texts.append(text)
+        }
+        let column = NSStackView(views: texts)
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 2
+        let line = NSStackView(views: [icon, column, NSView(), control])
+        line.spacing = 12
+        line.alignment = .centerY
+        let container = NSView()
+        line.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            line.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            line.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+        return container
     }
 
     /// Solid dark background for a popover's content (the default material is see-through).

@@ -3,12 +3,21 @@ import Foundation
 /// One-time carry-over from the app's earlier name, so settings, shortcuts and capture
 /// history survive the rename. Runs before anything reads settings.
 enum Migration {
+    /// File-name templates saved under the old name start with it; switch them to Clarishot.
+    private static func renameTemplates(_ defaults: UserDefaults) {
+        for key in ["screenshotName", "recordingName"] {
+            guard let value = defaults.string(forKey: key), value.contains("Snapzy") else { continue }
+            defaults.set(value.replacingOccurrences(of: "Snapzy", with: "Clarishot"), forKey: key)
+        }
+    }
+
     private static let oldBundleID = "com.scottmackey.snapzy"
     private static let oldFolderName = "Snapzy"
     private static let doneKey = "migratedFromOldName"
 
     static func run() {
         let defaults = UserDefaults.standard
+        renameTemplates(defaults)
         guard !defaults.bool(forKey: doneKey) else { return }
 
         // Settings and shortcuts.
