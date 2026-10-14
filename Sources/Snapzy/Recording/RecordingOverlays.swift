@@ -21,9 +21,9 @@ final class CameraBubble: NSPanel {
 
     init(options: RecordingOptions) {
         self.options = options
-        let d = options.cameraDiameter
+        let size = options.cameraBubbleSize
         preview = AVCaptureVideoPreviewLayer(session: session)
-        super.init(contentRect: CGRect(x: 0, y: 0, width: d, height: d),
+        super.init(contentRect: CGRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .screenSaver
@@ -32,7 +32,7 @@ final class CameraBubble: NSPanel {
         hasShadow = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let view = CameraView(frame: CGRect(x: 0, y: 0, width: d, height: d))
+        let view = CameraView(frame: CGRect(origin: .zero, size: size))
         view.autoresizingMask = [.width, .height]
         view.wantsLayer = true
         view.layer?.masksToBounds = true
@@ -74,12 +74,12 @@ final class CameraBubble: NSPanel {
     func place(in rect: CGRect) {
         region = rect
         normalFrame = nil
-        setFrame(CGRect(x: rect.minX + 20, y: rect.minY + 20, width: options.cameraDiameter, height: options.cameraDiameter),
-                 display: true)
+        let size = options.cameraBubbleSize
+        setFrame(CGRect(x: rect.minX + 20, y: rect.minY + 20, width: size.width, height: size.height), display: true)
         applyShape()
     }
 
-    private func toggleFullScreen() {
+    func toggleFullScreen() {
         if let normal = normalFrame {
             normalFrame = nil
             setFrame(normal, display: true, animate: true)
@@ -96,7 +96,7 @@ final class CameraBubble: NSPanel {
         if normalFrame != nil {
             radius = 0
         } else {
-            radius = options.cameraRounded ? min(size.width, size.height) * 0.18 : min(size.width, size.height) / 2
+            radius = options.cameraShape == .circle ? min(size.width, size.height) / 2 : min(size.width, size.height) * 0.14
         }
         contentView?.layer?.cornerRadius = radius
         contentView?.layer?.borderWidth = normalFrame != nil ? 0 : 3

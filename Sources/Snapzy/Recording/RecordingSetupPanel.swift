@@ -13,8 +13,8 @@ struct RecordingOptions {
     var countdown = true
     var scaleTo1x = false
     var hideDesktopIcons = false
-    var cameraSize = 1          // 0 small, 1 medium, 2 large
-    var cameraRounded = false   // false = circle, true = rounded square
+    var cameraSize = 1          // 0 small, 1 medium, 2 large, 3 huge
+    var cameraShape = CameraShape.circle
     var cameraMirrored = true
     var cameraDeviceID: String? // nil = system default
     var microphoneDeviceID: String?
@@ -51,7 +51,16 @@ struct RecordingOptions {
 
     static let keystrokePositions = ["Top-Left", "Top-Center", "Top-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"]
 
-    var cameraDiameter: CGFloat { [120, 180, 260][min(max(cameraSize, 0), 2)] }
+    var cameraDiameter: CGFloat { [120, 180, 260, 380][min(max(cameraSize, 0), 3)] }
+    /// The bubble's size for the chosen size and shape.
+    var cameraBubbleSize: CGSize {
+        let d = cameraDiameter
+        switch cameraShape {
+        case .circle, .square: return CGSize(width: d, height: d)
+        case .rectangle: return CGSize(width: (d * 16 / 10).rounded(), height: d)
+        case .vertical: return CGSize(width: (d * 3 / 4).rounded(), height: (d * 4 / 3).rounded())
+        }
+    }
 
     private static let key = "recordingOptions"
 
@@ -69,7 +78,11 @@ struct RecordingOptions {
         o.scaleTo1x = d["scaleTo1x"] as? Bool ?? o.scaleTo1x
         o.hideDesktopIcons = d["hideDesktopIcons"] as? Bool ?? o.hideDesktopIcons
         o.cameraSize = d["cameraSize"] as? Int ?? o.cameraSize
-        o.cameraRounded = d["cameraRounded"] as? Bool ?? o.cameraRounded
+        if let raw = d["cameraShape"] as? Int, let shape = CameraShape(rawValue: raw) {
+            o.cameraShape = shape
+        } else if d["cameraRounded"] as? Bool == true {
+            o.cameraShape = .square // from the earlier circle / rounded-square setting
+        }
         o.cameraMirrored = d["cameraMirrored"] as? Bool ?? o.cameraMirrored
         o.cameraDeviceID = d["cameraDeviceID"] as? String
         o.microphoneDeviceID = d["microphoneDeviceID"] as? String
@@ -99,7 +112,7 @@ struct RecordingOptions {
             "highlightClicks": highlightClicks, "showKeystrokes": showKeystrokes,
             "showCursor": showCursor, "fps": fps, "countdown": countdown, "scaleTo1x": scaleTo1x,
             "hideDesktopIcons": hideDesktopIcons, "cameraSize": cameraSize,
-            "cameraRounded": cameraRounded, "cameraMirrored": cameraMirrored,
+            "cameraShape": cameraShape.rawValue, "cameraMirrored": cameraMirrored,
             "dimScreen": dimScreen, "rememberSelection": rememberSelection, "clickColor": clickColor,
             "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate, "keystrokePosition": keystrokePosition,
             "keystrokeScale": keystrokeScale, "keystrokesBlur": keystrokesBlur, "keystrokesLight": keystrokesLight,
@@ -126,6 +139,7 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
     var onSizeChange: ((CGSize) -> Void)?
     var onFullscreen: (() -> Void)?
     var onReselect: (() -> Void)?
+    var onCameraFullScreen: (() -> Void)?
     var onRecord: ((RecordingFormat) -> Void)?
     var onCancel: (() -> Void)?
 
@@ -198,6 +212,10 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
                 // The microphone button picks a device instead of toggling.
                 if path == \RecordingOptions.microphone {
                     self.showMicrophoneMenu(from: button)
+                    return
+                }
+                if path == \RecordingOptions.camera {
+                    self.showCameraMenu(from: button)
                     return
                 }
                 button.isOn.toggle()
@@ -361,7 +379,9 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         func state(_ on: Bool) -> String { on ? "On" : "Off" }
         toggles[0].hint = options.microphone ? "Microphone: \(micName)" : "Microphone: Off (click to choose)"
         toggles[1].hint = "Computer audio: \(state(options.systemAudio))"
-        toggles[2].hint = "Camera: \(state(options.camera))"
+        let cameraName = Devices.cameras().first { $0.uniqueID == options.cameraDeviceID }?.localizedName
+            ?? AVCaptureDevice.default(for: .video)?.localizedName ?? "Default"
+        toggles[2].hint = options.camera ? "Camera: \(cameraName)" : "Camera: Off (click to choose)"
         toggles[3].hint = "Highlight clicks: \(state(options.highlightClicks))"
         toggles[4].hint = "Show keystrokes: \(state(options.showKeystrokes))"
     }
@@ -384,6 +404,58 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
             item.state = options.microphone && chosen == mic.uniqueID ? .on : .off
             menu.addItem(item)
         }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: -4), in: view)
+    }
+
+    /// Camera, size, full screen, shape and flip, in one menu like the reference.
+    private func showCameraMenu(from view: NSView) {
+        HintWindow.shared.hide()
+        let menu = NSMenu()
+        func item(_ title: String, checked: Bool, _ action: @escaping (inout RecordingOptions) -> Void) -> NSMenuItem {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                guard let self else { return }
+                action(&self.options)
+                self.toggles[2].isOn = self.options.camera
+                self.onOptionsChange?(self.options)
+                self.updateTips()
+            }
+            item.state = checked ? .on : .off
+            return item
+        }
+
+        menu.addItem(.sectionHeader(title: "Camera"))
+        menu.addItem(item("None", checked: !options.camera) { $0.camera = false })
+        let chosen = options.cameraDeviceID ?? AVCaptureDevice.default(for: .video)?.uniqueID
+        for cam in Devices.cameras() {
+            menu.addItem(item(cam.localizedName, checked: options.camera && chosen == cam.uniqueID) {
+                $0.camera = true
+                $0.cameraDeviceID = cam.uniqueID
+            })
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "Size"))
+        for (index, title) in ["Small", "Medium", "Large", "Huge"].enumerated() {
+            menu.addItem(item(title, checked: options.cameraSize == index) { $0.cameraSize = index })
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "Click on camera to toggle Full Screen"))
+        let full = ClosureMenuItem(title: "Full Screen") { [weak self] in self?.onCameraFullScreen?() }
+        full.isEnabled = options.camera
+        menu.addItem(full)
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "Shape"))
+        for shape in CameraShape.allCases {
+            menu.addItem(item(shape.title, checked: options.cameraShape == shape) { $0.cameraShape = shape })
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "Options"))
+        menu.addItem(item("Flip Camera", checked: options.cameraMirrored) { $0.cameraMirrored.toggle() })
+
+        menu.autoenablesItems = false
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: -4), in: view)
     }
 
@@ -693,5 +765,19 @@ final class ActionRow: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseUp(with event: NSEvent) {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+    }
+}
+
+/// The camera bubble's outline.
+enum CameraShape: Int, CaseIterable {
+    case circle, square, rectangle, vertical
+
+    var title: String {
+        switch self {
+        case .circle: return "Circle"
+        case .square: return "Square"
+        case .rectangle: return "Rectangle"
+        case .vertical: return "Vertical"
+        }
     }
 }

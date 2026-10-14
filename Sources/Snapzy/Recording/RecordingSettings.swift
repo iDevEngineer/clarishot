@@ -65,12 +65,6 @@ final class RecordingSettingsViewController: NSViewController {
                 row("Optimize GIFs", control: optionToggle(\.gifOptimize),
                     note: "Merges frames that don't change, for smaller files."),
                 row("Quality", control: qualitySlider())
-            ]),
-            section("Camera", [
-                row("Camera", control: devicePopup(Devices.cameras(), \.cameraDeviceID)),
-                row("Size", control: popup(["Small", "Medium", "Large"], values: [0, 1, 2], \.cameraSize)),
-                row("Shape", control: popup(["Circle", "Rounded square"], values: [false, true], \.cameraRounded)),
-                row("Mirror camera", control: optionToggle(\.cameraMirrored))
             ])
         ])
         stack.orientation = .vertical

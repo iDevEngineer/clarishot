@@ -74,6 +74,7 @@ final class RecordingCoordinator {
         panel.onSizeChange = { [weak self] size in self?.resize(to: size) }
         panel.onFullscreen = { [weak self] in self?.useFullScreen() }
         panel.onReselect = { [weak self] in self?.reselect() }
+        panel.onCameraFullScreen = { [weak self] in self?.camera?.toggleFullScreen() }
         panel.onRecord = { [weak self] format in self?.beginRecording(format) }
         panel.onCancel = { [weak self] in self?.cancelSetup() }
         panel.place(near: globalRect, on: screen)
@@ -88,7 +89,7 @@ final class RecordingCoordinator {
         let old = options
         options = new
         options.save()
-        let cameraLookChanged = new.cameraSize != old.cameraSize || new.cameraRounded != old.cameraRounded
+        let cameraLookChanged = new.cameraSize != old.cameraSize || new.cameraShape != old.cameraShape
             || new.cameraMirrored != old.cameraMirrored || new.cameraDeviceID != old.cameraDeviceID
         if new.camera != old.camera || (new.camera && cameraLookChanged) {
             hideCamera()
