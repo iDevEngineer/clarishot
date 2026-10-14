@@ -96,7 +96,7 @@ final class Settings {
 
     /// How window captures look: just the window, with a soft shadow, or on the wallpaper.
     var windowStyle: WindowStyle {
-        get { WindowStyle(rawValue: defaults.string(forKey: "windowStyle") ?? "") ?? .shadow }
+        get { WindowStyle(rawValue: defaults.string(forKey: "windowStyle") ?? "") ?? .background }
         set { set(newValue.rawValue, "windowStyle") }
     }
 

@@ -129,6 +129,7 @@ private final class PinView: NSView {
     private var lockButton: CircleButton!
     private var pasteButton: PillButton!
     private var locked = false
+    private var resizeGrip: ResizeGrip?
 
     init(frame: CGRect, image: CGImage) {
         super.init(frame: frame)
@@ -160,7 +161,13 @@ private final class PinView: NSView {
         pasteButton.setFrameOrigin(CGPoint(x: bounds.midX - pasteButton.frame.width / 2, y: inset))
         pasteButton.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
 
-        [close, lockButton, pasteButton].forEach { controls.addSubview($0) }
+        let grip = ResizeGrip(aspect: frame.width / max(frame.height, 1))
+        grip.isAllowed = { [weak self] in !(self?.locked ?? true) }
+        grip.setFrameOrigin(CGPoint(x: bounds.maxX - ResizeGrip.size - 2, y: 2))
+        grip.autoresizingMask = [.minXMargin, .maxYMargin]
+        resizeGrip = grip
+
+        [close, lockButton, pasteButton, grip].forEach { controls.addSubview($0) }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -175,6 +182,7 @@ private final class PinView: NSView {
         lockButton.toolTip = locked ? "Unlock" : "Lock: only allow closing"
         pasteButton.isEnabled = !locked
         pasteButton.alphaValue = locked ? 0.4 : 1
+        resizeGrip?.alphaValue = locked ? 0.3 : 1
         onLockChange?(locked)
     }
 
@@ -199,4 +207,68 @@ private final class PinView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+}
+
+/// Bottom-right grip: drag to resize the pin, keeping its shape and top-left corner.
+@MainActor
+private final class ResizeGrip: NSView {
+    static let size: CGFloat = 20
+    var isAllowed: () -> Bool = { true }
+    private let aspect: CGFloat
+    private var startMouse: CGPoint?
+    private var startFrame: CGRect = .zero
+
+    init(aspect: CGFloat) {
+        self.aspect = aspect
+        super.init(frame: CGRect(x: 0, y: 0, width: Self.size, height: Self.size))
+        toolTip = "Drag to resize"
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Three short diagonal lines, white over a dark edge so they show on any image.
+        for (color, width) in [(NSColor.black.withAlphaComponent(0.45), 3.0), (NSColor.white, 1.5)] {
+            let path = NSBezierPath()
+            for inset in [4.0, 9.0, 14.0] {
+                path.move(to: CGPoint(x: bounds.maxX - 3, y: inset))
+                path.line(to: CGPoint(x: inset, y: 3))
+            }
+            path.lineWidth = width
+            path.lineCapStyle = .round
+            color.setStroke()
+            path.stroke()
+        }
+    }
+
+    override func resetCursorRects() {
+        if #available(macOS 15.0, *) {
+            addCursorRect(bounds, cursor: .frameResize(position: .bottomRight, directions: .all))
+        } else {
+            addCursorRect(bounds, cursor: .crosshair)
+        }
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// Dragging the grip resizes; it must not move the window instead.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isAllowed(), let window else { return }
+        startMouse = NSEvent.mouseLocation
+        startFrame = window.frame
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = startMouse, let window else { return }
+        let now = NSEvent.mouseLocation
+        // Right or down makes it bigger; follow whichever direction moved further.
+        let dx = now.x - start.x, dy = (start.y - now.y) * aspect
+        let maxWidth = (window.screen?.visibleFrame.width ?? 4000) - 20
+        let width = min(max(startFrame.width + (abs(dx) > abs(dy) ? dx : dy), 80), maxWidth)
+        let height = width / aspect
+        window.setFrame(CGRect(x: startFrame.minX, y: startFrame.maxY - height, width: width, height: height), display: true)
+    }
+
+    override func mouseUp(with event: NSEvent) { startMouse = nil }
 }

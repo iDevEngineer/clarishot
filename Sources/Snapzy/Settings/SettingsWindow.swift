@@ -243,7 +243,7 @@ final class ScreenshotsPane: SettingsPane {
         note("Scaling to 1x makes files smaller and helps Retina screenshots display at the right size in other apps.")
         separator()
         let styles = Settings.WindowStyle.allCases
-        row("Window captures", popup(styles.map(\.title), selected: styles.firstIndex(of: s.windowStyle) ?? 1) {
+        row("Window captures", popup(styles.map(\.title), selected: styles.firstIndex(of: s.windowStyle) ?? 2) {
             s.windowStyle = styles[$0]
         })
         let presets = BackgroundPresets.all.map(\.name)
