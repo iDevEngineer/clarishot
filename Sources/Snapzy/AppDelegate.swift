@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenu: StatusMenuController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.applicationIconImage = AppIcon.make()
+        NSApp.applicationIconImage = AppIcon.current
         statusMenu = StatusMenuController()
         Shortcuts.registerAll()
         Wallpaper.startWatching()

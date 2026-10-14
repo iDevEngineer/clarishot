@@ -4,6 +4,14 @@ import AppKit
 /// Set as the app icon at launch, so alerts and panels show it.
 @MainActor
 enum AppIcon {
+    /// The bundled icon (from Resources/Brand) if there is one, otherwise the drawn fallback.
+    static var current: NSImage {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let image = NSImage(contentsOf: url) {
+            return image
+        }
+        return make()
+    }
+
     static func make(size: CGFloat = 512) -> NSImage {
         NSImage(size: CGSize(width: size, height: size), flipped: false) { rect in
             // macOS icon grid: the tile sits inside ~10% margins.

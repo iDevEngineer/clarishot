@@ -331,7 +331,7 @@ final class RecordingCoordinator {
         let alert = NSAlert()
         alert.messageText = "Are you sure you want to delete this recording?"
         alert.informativeText = "You can't undo this action."
-        alert.icon = AppIcon.make()
+        alert.icon = AppIcon.current
         alert.addButton(withTitle: "Delete").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
         alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
