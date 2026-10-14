@@ -39,7 +39,8 @@ final class RecordingCoordinator {
     }
 
     private func chooseArea() {
-        CaptureCoordinator.shared.selectRegion { [weak self] shot, rect in
+        CaptureCoordinator.shared.selectRegion(hint: "Drag to record a part of the screen. Press Space to select a window.",
+                                               allowsWindowPick: true) { [weak self] shot, rect in
             self?.showSetup(screen: shot.screen, rect: rect)
         }
     }

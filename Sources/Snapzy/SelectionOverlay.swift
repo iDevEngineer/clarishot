@@ -34,6 +34,7 @@ final class SelectionOverlayController {
 
     /// `initial` pre-selects an area (All-In-One remembers the last one).
     init(shots: [ScreenShot], mode: SelectionMode, targets: [WindowTarget], hint: String? = nil,
+         allowsWindowPick: Bool = false,
          initial: (displayID: CGDirectDisplayID, rect: CGRect)? = nil,
          completion: @escaping (SelectionResult?) -> Void) {
         self.completion = completion
@@ -52,6 +53,7 @@ final class SelectionOverlayController {
             let start = initial.flatMap { ScreenCapturer.displayID(for: shot.screen) == $0.displayID ? $0.rect : nil }
             let view = OverlayView(frame: CGRect(origin: .zero, size: shot.screen.frame.size),
                                    shot: shot, mode: mode, targets: targets, hint: hint, initialSelection: start)
+            view.allowsWindowPick = allowsWindowPick
             view.onFinish = { [weak self] result in self?.finish(result) }
             window.contentView = view
             window.setFrame(shot.screen.frame, display: false)
@@ -82,7 +84,11 @@ final class SelectionOverlayController {
     private func handleKey(_ keyCode: Int64, isDown: Bool) -> Bool {
         let views = windows.compactMap { $0.contentView as? OverlayView }
         switch keyCode {
-        case 49: // space: move the box while dragging
+        case 49: // space: move the box while dragging, or switch between area and window picking
+            if isDown, !views.contains(where: \.isDragging), views.first?.allowsWindowPick == true {
+                views.forEach { $0.toggleWindowPick() }
+                return true
+            }
             views.forEach { $0.setSpaceHeld(isDown) }
             return true
         case 53: // esc
@@ -123,6 +129,26 @@ final class OverlayView: NSView {
     private let mode: SelectionMode
     private let targets: [WindowTarget]
     private let hint: String?
+    /// Area mode can switch to picking a whole window with Space (used by Record Screen).
+    var allowsWindowPick = false
+    private var pickingWindow = false
+    /// Hovering and clicking windows (window mode, or area mode after pressing Space).
+    private var picksWindows: Bool { mode == .window || pickingWindow }
+
+    var isDragging: Bool {
+        if case .drawing = interaction { return true }
+        return false
+    }
+
+    func toggleWindowPick() {
+        guard allowsWindowPick else { return }
+        pickingWindow.toggle()
+        selection = nil
+        updateHover()
+        updateCursor()
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
     private var mouse: CGPoint?
     private var selection: CGRect?
     private var hovered: WindowTarget?
@@ -204,7 +230,7 @@ final class OverlayView: NSView {
     }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: mode == .window ? CameraCursor.shared : CrosshairCursor.shared)
+        addCursorRect(bounds, cursor: picksWindows ? CameraCursor.shared : CrosshairCursor.shared)
     }
     override func cursorUpdate(with event: NSEvent) { updateCursor() }
 
@@ -231,7 +257,7 @@ final class OverlayView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard mode != .window else { return }
+        guard !picksWindows else { return }
         let p = convert(event.locationInWindow, from: nil)
         if editable, let rect = selection {
             if let handle = handle(at: p, in: rect) {
@@ -298,6 +324,15 @@ final class OverlayView: NSView {
             spaceHeld = false
             lastDragPoint = nil
         }
+        if pickingWindow {
+            // Record a whole window: use its frame (on this screen) as the area.
+            if let hovered {
+                let local = hovered.frame.offsetBy(dx: -shot.screen.frame.minX, dy: -shot.screen.frame.minY)
+                    .intersection(bounds).integral
+                if local.width >= 4, local.height >= 4 { onFinish?(.area(shot, local)) }
+            }
+            return
+        }
         switch mode {
         case .area:
             if let rect = selection, rect.width >= 4, rect.height >= 4 {
@@ -323,6 +358,7 @@ final class OverlayView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
+        case 49 where allowsWindowPick && !isDragging: toggleWindowPick()
         case 53: onFinish?(nil)
         case 36 where editable, 76 where editable: perform(mode == .scrollArea ? .scrolling : .screenshot)
         default: super.keyDown(with: event)
@@ -333,7 +369,7 @@ final class OverlayView: NSView {
 
     // MARK: All-In-One
 
-    var isWindowMode: Bool { mode == .window }
+    var isWindowMode: Bool { picksWindows }
 
     func setSpaceHeld(_ held: Bool) { spaceHeld = held }
 
@@ -472,7 +508,7 @@ final class OverlayView: NSView {
             NSCursor.arrow.set()
             return
         }
-        if mode == .window {
+        if picksWindows {
             CameraCursor.shared.set()
             return
         }
@@ -499,12 +535,17 @@ final class OverlayView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.draw(shot.image, in: bounds)
 
-        switch mode {
-        case .area, .allInOne, .scrollArea: drawArea(ctx)
-        case .window: drawWindowHighlight(ctx)
+        if picksWindows {
+            drawWindowHighlight(ctx)
+        } else {
+            drawArea(ctx)
         }
-        if let hint, selection == nil { drawHint(hint) }
-        if Settings.shared.showMagnifier, mode != .window, mode != .scrollArea, let mouse, isDrawingOrIdle {
+        if pickingWindow {
+            drawHint("Click a window to record it. Press Space to drag an area instead.")
+        } else if let hint, selection == nil {
+            drawHint(hint)
+        }
+        if Settings.shared.showMagnifier, !picksWindows, mode != .scrollArea, let mouse, isDrawingOrIdle {
             drawMagnifier(at: mouse, ctx)
         }
     }
@@ -690,7 +731,7 @@ final class OverlayView: NSView {
     // MARK: Helpers
 
     private func updateHover() {
-        guard mode == .window, let mouse else { hovered = nil; return }
+        guard picksWindows, let mouse else { hovered = nil; return }
         let global = CGPoint(x: mouse.x + shot.screen.frame.minX, y: mouse.y + shot.screen.frame.minY)
         hovered = targets.first { $0.frame.contains(global) }
     }

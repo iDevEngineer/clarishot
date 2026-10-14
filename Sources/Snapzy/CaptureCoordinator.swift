@@ -229,12 +229,15 @@ final class CaptureCoordinator {
 
     /// Shows the area overlay and reports the chosen screen and rectangle (screen-local points).
     /// `hint` is shown at the top of the screen, e.g. "Drag to capture the scrolling part of the screen."
-    func selectRegion(hint: String? = nil, then handle: @escaping (ScreenShot, CGRect) -> Void) {
+    /// `allowsWindowPick`: Space switches to clicking a whole window, reported as its area.
+    func selectRegion(hint: String? = nil, allowsWindowPick: Bool = false,
+                      then handle: @escaping (ScreenShot, CGRect) -> Void) {
         guard overlay == nil else { return }
         Task {
             do {
+                let targets = allowsWindowPick ? ScreenCapturer.windowTargets() : []
                 let shots = try await ScreenCapturer.captureAllScreens()
-                present(shots, mode: .area, targets: [], hint: hint) { result in
+                present(shots, mode: .area, targets: targets, hint: hint, allowsWindowPick: allowsWindowPick) { result in
                     guard case let .area(shot, rect)? = result else { return }
                     handle(shot, rect)
                 }
@@ -245,10 +248,12 @@ final class CaptureCoordinator {
     }
 
     private func present(_ shots: [ScreenShot], mode: SelectionMode, targets: [WindowTarget], hint: String? = nil,
+                         allowsWindowPick: Bool = false,
                          initial: (displayID: CGDirectDisplayID, rect: CGRect)? = nil,
                          completion: @escaping (SelectionResult?) -> Void) {
-        let controller = SelectionOverlayController(shots: shots, mode: mode, targets: targets,
-                                                    hint: hint, initial: initial) { [weak self] result in
+        let controller = SelectionOverlayController(shots: shots, mode: mode, targets: targets, hint: hint,
+                                                    allowsWindowPick: allowsWindowPick,
+                                                    initial: initial) { [weak self] result in
             self?.overlay = nil
             completion(result)
         }
