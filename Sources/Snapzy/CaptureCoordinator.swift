@@ -121,7 +121,7 @@ final class CaptureCoordinator {
                     var style = BackgroundStyle()
                     style.enabled = true
                     style.fillIndex = BackgroundFill.presets.count - 1 // wallpaper
-                    style.padding = 80
+                    style.padding = 32
                     style.cornerRadius = 14
                     image = BackgroundRenderer.compose(image, scale: shot.screen.backingScaleFactor, style: style) ?? image
                 }

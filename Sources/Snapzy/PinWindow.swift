@@ -279,21 +279,22 @@ private final class ResizeHandle: NSView {
             NSColor.white.setFill()
             path.fill()
         case .bottomLeft, .bottomRight:
-            // Three diagonal lines, larger than a standard grip.
-            let flip = position == .bottomLeft
-            for (color, width) in [(NSColor.black.withAlphaComponent(0.45), 3.5), (NSColor.white, 2.0)] {
-                let path = NSBezierPath()
-                for inset in [6.0, 13.0, 20.0] {
-                    let a = CGPoint(x: flip ? 4 : bounds.maxX - 4, y: inset)
-                    let b = CGPoint(x: flip ? bounds.maxX - inset : inset, y: 4)
-                    path.move(to: a)
-                    path.line(to: b)
-                }
-                path.lineWidth = width
-                path.lineCapStyle = .round
-                color.setStroke()
-                path.stroke()
-            }
+            // A rounded "L" bracket hugging the corner, styled like the edge bars.
+            let leg: CGFloat = 16, inset: CGFloat = 6
+            let x = position == .bottomLeft ? inset : bounds.maxX - inset
+            let dir: CGFloat = position == .bottomLeft ? 1 : -1
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: x, y: inset + leg))
+            path.line(to: CGPoint(x: x, y: inset))
+            path.line(to: CGPoint(x: x + dir * leg, y: inset))
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.lineWidth = 7
+            NSColor.black.withAlphaComponent(0.4).setStroke()
+            path.stroke()
+            path.lineWidth = 5
+            NSColor.white.setStroke()
+            path.stroke()
         }
     }
 
