@@ -535,6 +535,13 @@ final class OverlayView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.draw(shot.image, in: bounds)
 
+        // While an instruction pill shows (before any area is chosen), dim the whole screen.
+        let showsHint = pickingWindow || (hint != nil && selection == nil)
+        if showsHint {
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+            ctx.fill(bounds)
+        }
+
         if picksWindows {
             drawWindowHighlight(ctx)
         } else {
@@ -600,10 +607,6 @@ final class OverlayView: NSView {
             if case .none = interaction, editable { return } // the bar shows the size
             drawLabel("\(Int(rect.width)) × \(Int(rect.height))", near: mouse ?? CGPoint(x: rect.maxX, y: rect.minY))
         } else {
-            if mode == .scrollArea {
-                ctx.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
-                ctx.fill(bounds)
-            }
             if let mouse { drawLabel("\(Int(mouse.x)), \(Int(bounds.height - mouse.y))", near: mouse) }
         }
     }
