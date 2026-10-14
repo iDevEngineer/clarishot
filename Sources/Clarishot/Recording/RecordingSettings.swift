@@ -70,7 +70,8 @@ final class RecordingSettingsViewController: NSViewController {
                 row("Optimize GIFs", control: optionToggle(\.gifOptimize),
                     note: "Merges frames that don't change, for smaller files."),
                 row("Quality", control: qualitySlider())
-            ])
+            ]),
+            mouseHighlightSection()
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -261,6 +262,126 @@ final class RecordingSettingsViewController: NSViewController {
     }
 
     /// Low … High slider for GIF colours.
+    // MARK: Mouse highlight
+
+    private var highlightControls: (size: NSSlider, duration: NSSlider, count: NSStepper, countLabel: NSTextField,
+                                    color: NSColorWell, opacity: NSSlider, labels: [NSTextField])?
+
+    /// Size, speed, ring count, colour and opacity of the click highlight, plus Reset.
+    private func mouseHighlightSection() -> NSView {
+        func valueLabel(_ text: String) -> NSTextField {
+            let label = NSTextField(labelWithString: text)
+            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            label.textColor = .secondaryLabelColor
+            label.alignment = .right
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            return label
+        }
+        func slider(_ value: Double, _ range: ClosedRange<Double>, label: NSTextField, format: @escaping (Double) -> String,
+                    set: @escaping (inout RecordingOptions, Double) -> Void) -> NSSlider {
+            let control = NSSlider(value: value, minValue: range.lowerBound, maxValue: range.upperBound, target: nil, action: nil)
+            control.controlSize = .small
+            control.translatesAutoresizingMaskIntoConstraints = false
+            control.widthAnchor.constraint(equalToConstant: 120).isActive = true
+            label.stringValue = format(value)
+            let target = Callback { [unowned self] sender in
+                let v = (sender as? NSSlider)?.doubleValue ?? value
+                set(&self.options, v)
+                label.stringValue = format(v)
+                self.onChange(self.options)
+            }
+            targets.append(target)
+            control.target = target
+            control.action = #selector(Callback.fire(_:))
+            return control
+        }
+        func pair(_ a: NSView, _ b: NSView) -> NSView {
+            let stack = NSStackView(views: [a, b])
+            stack.spacing = 8
+            return stack
+        }
+
+        let sizeLabel = valueLabel(""), durationLabel = valueLabel(""), opacityLabel = valueLabel("")
+        let size = slider(options.clickScale, 0...1, label: sizeLabel, format: { "\(Int(24 + $0 * 56)) px" }) { $0.clickScale = $1 }
+        let duration = slider(options.clickDuration, 0.2...1.5, label: durationLabel,
+                              format: { String(format: "%.1f s", $0) }) { $0.clickDuration = $1 }
+        let opacity = slider(options.clickOpacity, 0.1...1, label: opacityLabel,
+                             format: { "\(Int(($0 * 100).rounded())) %" }) { $0.clickOpacity = $1 }
+
+        let countLabel = valueLabel("\(options.clickRipples)")
+        let count = NSStepper()
+        count.minValue = 1
+        count.maxValue = 5
+        count.integerValue = options.clickRipples
+        count.controlSize = .small
+        let countTarget = Callback { [unowned self] sender in
+            let v = (sender as? NSStepper)?.integerValue ?? 1
+            self.options.clickRipples = v
+            countLabel.stringValue = "\(v)"
+            self.onChange(self.options)
+        }
+        targets.append(countTarget)
+        count.target = countTarget
+        count.action = #selector(Callback.fire(_:))
+
+        let well = NSColorWell(style: .minimal)
+        well.color = options.clickNSColor
+        well.translatesAutoresizingMaskIntoConstraints = false
+        well.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        well.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        let wellTarget = Callback { [unowned self] sender in
+            guard let color = (sender as? NSColorWell)?.color else { return }
+            self.options.clickCustomColor = color.hexString
+            self.onChange(self.options)
+        }
+        targets.append(wellTarget)
+        well.target = wellTarget
+        well.action = #selector(Callback.fire(_:))
+
+        highlightControls = (size, duration, count, countLabel, well, opacity, [sizeLabel, durationLabel, opacityLabel])
+
+        let reset = NSButton(title: "Reset to Default", target: nil, action: nil)
+        reset.isBordered = false
+        reset.contentTintColor = .secondaryLabelColor
+        reset.font = .systemFont(ofSize: 12)
+        let resetTarget = Callback { [unowned self] _ in self.resetHighlight() }
+        targets.append(resetTarget)
+        reset.target = resetTarget
+        reset.action = #selector(Callback.fire(_:))
+        let resetRow = NSStackView(views: [NSView(), reset])
+
+        return section("Mouse Highlight", [
+            row("Highlight Size", control: pair(sizeLabel, size), note: "Diameter of the click ring"),
+            row("Animation Duration", control: pair(durationLabel, duration), note: "How long each ring takes to expand and fade"),
+            row("Ripple Count", control: pair(countLabel, count), note: "Number of expanding rings per click"),
+            row("Highlight Color", control: well, note: "Colour of the click rings"),
+            row("Opacity", control: pair(opacityLabel, opacity), note: "How solid the rings are"),
+            resetRow
+        ])
+    }
+
+    private func resetHighlight() {
+        let defaults = RecordingOptions()
+        options.clickScale = defaults.clickScale
+        options.clickDuration = defaults.clickDuration
+        options.clickRipples = defaults.clickRipples
+        options.clickOpacity = defaults.clickOpacity
+        options.clickCustomColor = nil
+        options.clickColor = defaults.clickColor
+        onChange(options)
+        guard let c = highlightControls else { return }
+        c.size.doubleValue = options.clickScale
+        c.duration.doubleValue = options.clickDuration
+        c.opacity.doubleValue = options.clickOpacity
+        c.count.integerValue = options.clickRipples
+        c.countLabel.stringValue = "\(options.clickRipples)"
+        c.color.color = options.clickNSColor
+        c.labels[0].stringValue = "\(Int(24 + options.clickScale * 56)) px"
+        c.labels[1].stringValue = String(format: "%.1f s", options.clickDuration)
+        c.labels[2].stringValue = "\(Int((options.clickOpacity * 100).rounded())) %"
+    }
+
     private func qualitySlider() -> NSView {
         let slider = NSSlider(value: options.gifQuality, minValue: 0, maxValue: 1, target: nil, action: nil)
         slider.controlSize = .small
@@ -404,7 +525,10 @@ final class ClickOptionsViewController: NSViewController {
         let color = RecordingSettingsViewController.plainPopup()
         color.addItems(withTitles: RecordingOptions.clickColors.map(\.name))
         color.selectItem(at: options.clickColor)
-        bind(color) { [unowned self] in self.options.clickColor = ($0 as? NSPopUpButton)?.indexOfSelectedItem ?? 0 }
+        bind(color) { [unowned self] in
+            self.options.clickColor = ($0 as? NSPopUpButton)?.indexOfSelectedItem ?? 0
+            self.options.clickCustomColor = nil
+        }
 
         let style = RecordingSettingsViewController.plainPopup()
         style.addItems(withTitles: ["Outline", "Filled"])

@@ -408,18 +408,34 @@ final class ClickHighlightWindow: NSWindow {
 @MainActor
 enum ClickRipple {
     static func add(to layer: CALayer, at point: CGPoint, options: RecordingOptions) {
+        let count = min(max(options.clickRipples, 1), 5)
+        let duration = min(max(options.clickDuration, 0.2), 2)
+        for index in 0..<count {
+            // Extra rings start a little later, so they spread outwards one after another.
+            addRing(to: layer, at: point, options: options, delay: Double(index) * duration * 0.22, duration: duration)
+        }
+        let total = duration * (1 + 0.22 * Double(count - 1)) + 0.4
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+            layer.sublayers?.filter { $0.name == "clickRing" && $0.animationKeys() == nil }.forEach { $0.removeFromSuperlayer() }
+        }
+    }
+
+    private static func addRing(to layer: CALayer, at point: CGPoint, options: RecordingOptions, delay: Double, duration: Double) {
         let size = options.clickDiameter
         let ring = CAShapeLayer()
+        ring.name = "clickRing"
         ring.frame = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
         ring.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: size, height: size), transform: nil)
         let color = options.clickNSColor
         ring.fillColor = options.clickFilled ? color.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
         ring.strokeColor = color.cgColor
         ring.lineWidth = 3
+        ring.opacity = 0
         layer.addSublayer(ring)
 
+        let peak = Float(min(max(options.clickOpacity, 0.1), 1))
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1
+        fade.fromValue = peak
         fade.toValue = 0
         let group = CAAnimationGroup()
         if options.clickAnimate {
@@ -428,14 +444,19 @@ enum ClickRipple {
             scale.toValue = 1.3
             group.animations = [scale, fade]
         } else {
-            fade.beginTime = 0.3 // hold still, then fade
-            group.animations = [fade]
+            let hold = CABasicAnimation(keyPath: "opacity")
+            hold.fromValue = peak
+            hold.toValue = peak
+            hold.duration = duration * 0.6
+            fade.beginTime = duration * 0.6
+            fade.duration = duration * 0.4
+            group.animations = [hold, fade]
         }
-        group.duration = options.clickAnimate ? 0.5 : 0.6
+        group.duration = duration
+        group.beginTime = CACurrentMediaTime() + delay
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        ring.opacity = 0
+        group.isRemovedOnCompletion = true
         ring.add(group, forKey: "ripple")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { ring.removeFromSuperlayer() }
     }
 }
 

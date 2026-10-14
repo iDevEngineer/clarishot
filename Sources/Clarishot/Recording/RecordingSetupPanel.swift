@@ -24,6 +24,10 @@ struct RecordingOptions {
     var clickScale = 0.5         // 0 … 1, see clickDiameter
     var clickFilled = false      // false = outline
     var clickAnimate = true
+    var clickDuration = 0.5      // seconds for one ripple
+    var clickRipples = 1         // rings per click, 1 … 5
+    var clickOpacity = 1.0       // 0.1 … 1
+    var clickCustomColor: String? // "#RRGGBB" from the colour well; overrides clickColor
     var keystrokePosition = 4    // index into keystrokePositions (4 = Bottom-Center)
     var keystrokeScale = 0.5     // 0 … 1, see keystrokeFontSize
     var keystrokesBlur = true
@@ -45,7 +49,10 @@ struct RecordingOptions {
         ("Pink", .systemPink), ("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow),
         ("Green", .systemGreen), ("Gray", .systemGray)
     ]
-    var clickNSColor: NSColor { Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color }
+    var clickNSColor: NSColor {
+        if let hex = clickCustomColor, let color = NSColor(hex: hex) { return color }
+        return Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color
+    }
     var clickDiameter: CGFloat { 24 + CGFloat(min(max(clickScale, 0), 1)) * 56 }
     var keystrokeFontSize: CGFloat { 16 + CGFloat(min(max(keystrokeScale, 0), 1)) * 28 }
 
@@ -92,6 +99,10 @@ struct RecordingOptions {
         o.clickScale = d["clickScale"] as? Double ?? o.clickScale
         o.clickFilled = d["clickFilled"] as? Bool ?? o.clickFilled
         o.clickAnimate = d["clickAnimate"] as? Bool ?? o.clickAnimate
+        o.clickDuration = d["clickDuration"] as? Double ?? o.clickDuration
+        o.clickRipples = d["clickRipples"] as? Int ?? o.clickRipples
+        o.clickOpacity = d["clickOpacity"] as? Double ?? o.clickOpacity
+        o.clickCustomColor = d["clickCustomColor"] as? String
         o.keystrokePosition = d["keystrokePosition"] as? Int ?? o.keystrokePosition
         o.keystrokeScale = d["keystrokeScale"] as? Double ?? o.keystrokeScale
         o.keystrokesBlur = d["keystrokesBlur"] as? Bool ?? o.keystrokesBlur
@@ -114,7 +125,8 @@ struct RecordingOptions {
             "hideDesktopIcons": hideDesktopIcons, "cameraSize": cameraSize,
             "cameraShape": cameraShape.rawValue, "cameraMirrored": cameraMirrored,
             "dimScreen": dimScreen, "rememberSelection": rememberSelection, "clickColor": clickColor,
-            "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate, "keystrokePosition": keystrokePosition,
+            "clickScale": clickScale, "clickFilled": clickFilled, "clickAnimate": clickAnimate,
+            "clickDuration": clickDuration, "clickRipples": clickRipples, "clickOpacity": clickOpacity, "keystrokePosition": keystrokePosition,
             "keystrokeScale": keystrokeScale, "keystrokesBlur": keystrokesBlur, "keystrokesLight": keystrokesLight,
             "keystrokesCommandOnly": keystrokesCommandOnly, "maxResolution": maxResolution,
             "audioMono": audioMono, "gifFPS": gifFPS, "gifMaxWidth": gifMaxWidth,
@@ -122,6 +134,7 @@ struct RecordingOptions {
         ]
         if let cameraDeviceID { d["cameraDeviceID"] = cameraDeviceID }
         if let microphoneDeviceID { d["microphoneDeviceID"] = microphoneDeviceID }
+        if let clickCustomColor { d["clickCustomColor"] = clickCustomColor }
         UserDefaults.standard.set(d, forKey: Self.key)
     }
 }
@@ -792,5 +805,21 @@ enum CameraShape: Int, CaseIterable {
         case .rectangle: return "Rectangle"
         case .vertical: return "Vertical"
         }
+    }
+}
+
+extension NSColor {
+    /// "#RRGGBB" → colour (sRGB).
+    convenience init?(hex: String) {
+        let digits = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard digits.count == 6, let value = Int(digits, radix: 16) else { return nil }
+        self.init(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                  blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+    }
+
+    /// Colour → "#RRGGBB" (sRGB).
+    var hexString: String {
+        let c = usingColorSpace(.sRGB) ?? self
+        return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }
 }

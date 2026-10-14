@@ -51,6 +51,11 @@ enum PreferenceIcons {
         "Microphone": "mic",
         "Resolution": "aspectratio",
         "Optimize GIFs": "wand.and.stars",
+        "Highlight Size": "cursorarrow.rays",
+        "Animation Duration": "timer",
+        "Ripple Count": "circle.grid.3x3",
+        "Highlight Color": "paintpalette",
+        "Opacity": "circle.lefthalf.filled",
         // Annotate
         "Inverse arrow direction": "arrow.left.arrow.right",
         "Smooth drawing": "scribble.variable",
