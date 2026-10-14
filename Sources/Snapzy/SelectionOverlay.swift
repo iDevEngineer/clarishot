@@ -106,6 +106,9 @@ final class OverlayView: NSView {
     }
 
     private var interaction: Interaction = .none
+    /// Holding Space while dragging out an area moves the whole box instead of resizing it.
+    private var spaceHeld = false
+    private var lastDragPoint: CGPoint?
     /// Modes where the selection stays on screen to be moved and resized.
     private var editable: Bool { mode == .allInOne || mode == .scrollArea }
     private var startBar: ScrollStartBar?
@@ -186,6 +189,7 @@ final class OverlayView: NSView {
             }
         }
         interaction = .drawing(start: p)
+        lastDragPoint = p
         selection = nil
         actionBar?.isHidden = true
         startBar?.isHidden = true
@@ -194,14 +198,25 @@ final class OverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let point = clamped(convert(event.locationInWindow, from: nil))
         mouse = point
+        defer { lastDragPoint = point }
         switch interaction {
         case .none:
             return
-        case .drawing(let start):
-            var rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
-                              width: abs(point.x - start.x), height: abs(point.y - start.y))
-            if aspectLocked { rect = lockAspect(rect, anchor: start) }
-            selection = rect.integral
+        case .drawing(var start):
+            if spaceHeld, let last = lastDragPoint, let current = selection {
+                // Move the box (and its anchor corner) with the mouse, kept on screen.
+                var dx = point.x - last.x, dy = point.y - last.y
+                dx = min(max(dx, -current.minX), bounds.maxX - current.maxX)
+                dy = min(max(dy, -current.minY), bounds.maxY - current.maxY)
+                start = CGPoint(x: start.x + dx, y: start.y + dy)
+                interaction = .drawing(start: start)
+                selection = current.offsetBy(dx: dx, dy: dy).integral
+            } else {
+                var rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
+                                  width: abs(point.x - start.x), height: abs(point.y - start.y))
+                if aspectLocked { rect = lockAspect(rect, anchor: start) }
+                selection = rect.integral
+            }
         case .moving(let grab, let original):
             var rect = original.offsetBy(dx: point.x - grab.x, dy: point.y - grab.y)
             rect.origin.x = min(max(rect.minX, 0), bounds.maxX - rect.width)
@@ -214,7 +229,11 @@ final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { interaction = .none }
+        defer {
+            interaction = .none
+            spaceHeld = false
+            lastDragPoint = nil
+        }
         switch mode {
         case .area:
             if let rect = selection, rect.width >= 4, rect.height >= 4 {
@@ -240,10 +259,16 @@ final class OverlayView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
+        case 49: // space: move the box while dragging
+            if case .drawing = interaction { spaceHeld = true }
         case 53: onFinish?(nil)
         case 36 where editable, 76 where editable: perform(mode == .scrollArea ? .scrolling : .screenshot)
         default: super.keyDown(with: event)
         }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if event.keyCode == 49 { spaceHeld = false } else { super.keyUp(with: event) }
     }
 
     override func cancelOperation(_ sender: Any?) { onFinish?(nil) }
