@@ -368,14 +368,15 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
             let title = tool == .text ? "Size" : (tool == .counter ? "Size" : "Stroke")
             items.append(group(title, [strokeSlider(value: selected?.lineWidth ?? canvas.lineWidth)]))
         }
-        if [.rectangle, .ellipse, .line, .arrow].contains(tool) {
+        // Line style and end heads only apply to classic arrows: hide them otherwise.
+        let classicArrow = tool != .arrow || (selected?.arrowLook ?? canvas.arrowType) == .classic
+        if [.rectangle, .ellipse, .line, .arrow].contains(tool), classicArrow {
             let dash = selected.map(\.lineDash) ?? canvas.lineDash
             let control = segmented(LineDash.allCases.map { Self.dashImage($0) }, selected: dash.rawValue,
                                     tips: LineDash.allCases.map(\.title)) { [weak self] i in
                 self?.canvas.lineDash = LineDash(rawValue: i) ?? .solid
                 self?.applyToSelection()
             }
-            if tool == .arrow { control.isEnabled = (selected?.arrowLook ?? canvas.arrowType) == .classic }
             items.append(group("Line Style", [control]))
         }
         if tool == .arrow {
@@ -403,10 +404,10 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
                 self?.canvas.endHead = ArrowHead(rawValue: i) ?? .arrow
                 self?.applyToSelection()
             }
-            start.isEnabled = classic
-            end.isEnabled = classic
-            items.append(group("Start", [start]))
-            items.append(group("End", [end]))
+            if classic {
+                items.append(group("Start", [start]))
+                items.append(group("End", [end]))
+            }
         }
         if tool == .text {
             let popup = NSPopUpButton(frame: .zero, pullsDown: false)
