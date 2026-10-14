@@ -465,6 +465,13 @@ final class OverlayView: NSView {
     }
 
     private func updateCursor() {
+        if let mouse, [actionBar, startBar].contains(where: { bar in
+            guard let bar, !bar.isHidden else { return false }
+            return bar.frame.contains(mouse)
+        }) {
+            NSCursor.arrow.set()
+            return
+        }
         if mode == .window {
             CameraCursor.shared.set()
             return
@@ -749,6 +756,9 @@ final class AllInOneBar: NSView, NSTextFieldDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    override func mouseDown(with event: NSEvent) {}
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
+
     func update(size: CGSize, locked: Bool) {
         widthField.integerValue = Int(size.width)
         heightField.integerValue = Int(size.height)
@@ -857,6 +867,10 @@ private final class ModeButton: NSView {
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
+    /// Take the press so it never reaches the selection behind (which would start a new area).
+    override func mouseDown(with event: NSEvent) {}
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
+
     override func mouseEntered(with event: NSEvent) { layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor }
     override func mouseExited(with event: NSEvent) { layer?.backgroundColor = nil }
     override func mouseUp(with event: NSEvent) {
@@ -898,6 +912,8 @@ private final class AspectButton: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {}
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
     override func mouseUp(with event: NSEvent) {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { action(self) }
     }
