@@ -26,6 +26,11 @@ if git rev-parse "v$NEW" >/dev/null 2>&1; then
     echo "error: tag v$NEW already exists" >&2; exit 1
 fi
 
+# Warn if nothing was noted under Unreleased.
+if ! awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f && /[^[:space:]]/{found=1} END{exit !found}' CHANGELOG.md; then
+    echo "warning: CHANGELOG.md has no notes under [Unreleased]; this release will have empty notes." >&2
+fi
+
 TODAY=$(date +%Y-%m-%d)
 echo "$NEW" > VERSION
 
