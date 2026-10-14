@@ -92,7 +92,7 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
         let toolbar = ToolbarView()
         let bottomBar = ToolbarView(edge: .top)
-        for view in [toolbar, propertiesBar, bottomBar, canvas] as [NSView] {
+        for view in [toolbar, propertiesBar, bottomBar, canvas, backgroundSidebar] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
@@ -202,7 +202,10 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
 
             canvas.topAnchor.constraint(equalTo: propertiesBar.bottomAnchor),
             canvas.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
-            canvas.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            backgroundSidebar.topAnchor.constraint(equalTo: propertiesBar.bottomAnchor),
+            backgroundSidebar.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
+
+            canvas.leadingAnchor.constraint(equalTo: backgroundSidebar.trailingAnchor),
             canvas.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             leftGroup.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
@@ -229,6 +232,11 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         }
         canvas.onToolShortcut = { [weak self] tool in self?.selectTool(tool) }
         canvas.onSelectionChange = { [weak self] in self?.refreshProperties() }
+        backgroundSidebar.widthAnchor.constraint(equalToConstant: BackgroundSidebarView.width).isActive = true
+        let offset = backgroundSidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: -BackgroundSidebarView.width)
+        offset.isActive = true
+        sidebarOffset = offset
+        backgroundSidebar.isHidden = true
         DispatchQueue.main.async { [weak self] in self?.updateZoomLabel() }
     }
 
@@ -806,20 +814,32 @@ final class AnnotateWindowController: NSObject, NSWindowDelegate {
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: imageButton.bounds.maxY + 4), in: imageButton)
     }
 
+    /// The background column on the left; the background button shows and hides it.
+    private lazy var backgroundSidebar = BackgroundSidebarView(style: document.background) { [weak self] style in
+        guard let self else { return }
+        self.document.background = style
+        self.canvas.refresh()
+    }
+    /// Slides the sidebar in (0) or out (-width). It always keeps its full width, so its contents
+    /// never fight the window's size.
+    private var sidebarOffset: NSLayoutConstraint?
+
     fileprivate func showBackground() {
-        Settings.shared.annotateBackgroundWasOpen = true
-        let controller = BackgroundViewController(style: document.background) { [weak self] style in
-            guard let self else { return }
-            self.document.background = style
-            self.backgroundButton.isSelected = style.enabled
-            Settings.shared.annotateBackgroundWasOpen = style.enabled
-            self.canvas.refresh()
+        let open = backgroundSidebar.isHidden
+        if open {
+            backgroundSidebar.setStyle(document.background)
+            backgroundSidebar.isHidden = false
         }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = controller
-        popover.show(relativeTo: backgroundButton.bounds, of: backgroundButton, preferredEdge: .maxY)
-        self.popover = popover
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.allowsImplicitAnimation = true
+            sidebarOffset?.constant = open ? 0 : -BackgroundSidebarView.width
+            window.contentView?.layoutSubtreeIfNeeded()
+        }, completionHandler: { [weak self] in
+            if !open { self?.backgroundSidebar.isHidden = true }
+        })
+        backgroundButton.isSelected = open
+        Settings.shared.annotateBackgroundWasOpen = open
     }
 
     private func cycleWidth() {

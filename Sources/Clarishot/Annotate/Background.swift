@@ -6,6 +6,85 @@ enum BackgroundFill {
     case gradient(NSColor, NSColor)
     case solid(NSColor)
     case wallpaper
+    /// A picture file chosen by the user.
+    case picture(URL)
+    /// The wallpaper, blurred: 0 soft, 1 frosted dark, 2 dim.
+    case blurredWallpaper(Int)
+
+    /// The sidebar's gradients, defined in OKLCH (the first ten show before "Show more").
+    static let gradients: [(NSColor, NSColor)] = [
+        (NSColor(oklch: 0.70, 0.17, 10), NSColor(oklch: 0.84, 0.13, 65)),
+        (NSColor(oklch: 0.60, 0.20, 270), NSColor(oklch: 0.62, 0.22, 310)),
+        (NSColor(oklch: 0.77, 0.13, 185), NSColor(oklch: 0.58, 0.19, 262)),
+        (NSColor(oklch: 0.84, 0.18, 135), NSColor(oklch: 0.62, 0.12, 175)),
+        (NSColor(oklch: 0.90, 0.15, 95), NSColor(oklch: 0.73, 0.17, 50)),
+        (NSColor(oklch: 0.30, 0.10, 280), NSColor(oklch: 0.55, 0.20, 330)),
+        (NSColor(oklch: 0.82, 0.08, 230), NSColor(oklch: 0.92, 0.05, 330)),
+        (NSColor(oklch: 0.65, 0.20, 20), NSColor(oklch: 0.45, 0.17, 300)),
+        (NSColor(oklch: 0.88, 0.10, 160), NSColor(oklch: 0.75, 0.12, 230)),
+        (NSColor(oklch: 0.27, 0.02, 265), NSColor(oklch: 0.48, 0.03, 265)),
+        (NSColor(oklch: 0.20, 0.08, 270), NSColor(oklch: 0.40, 0.18, 290)),
+        (NSColor(oklch: 0.78, 0.15, 75), NSColor(oklch: 0.62, 0.22, 25)),
+        (NSColor(oklch: 0.70, 0.15, 330), NSColor(oklch: 0.80, 0.12, 250)),
+        (NSColor(oklch: 0.60, 0.13, 160), NSColor(oklch: 0.35, 0.08, 220)),
+        (NSColor(oklch: 0.93, 0.03, 85), NSColor(oklch: 0.82, 0.05, 60))
+    ]
+
+    /// Plain colours, defined in OKLCH: a dark-to-light row, then soft tints.
+    static let plainColors: [NSColor] = [
+        NSColor(oklch: 0.16, 0, 0), NSColor(oklch: 1, 0, 0), NSColor(oklch: 0.58, 0.17, 25), NSColor(oklch: 0.70, 0.14, 60),
+        NSColor(oklch: 0.80, 0.14, 90), NSColor(oklch: 0.62, 0.12, 150), NSColor(oklch: 0.62, 0.14, 258),
+        NSColor(oklch: 0.55, 0.22, 295),
+        NSColor(oklch: 0.30, 0, 0), NSColor(oklch: 0.93, 0, 0), NSColor(oklch: 0.85, 0.05, 30), NSColor(oklch: 0.88, 0.07, 75),
+        NSColor(oklch: 0.94, 0.07, 100), NSColor(oklch: 0.90, 0.06, 150), NSColor(oklch: 0.88, 0.05, 250),
+        NSColor(oklch: 0.85, 0.07, 300)
+    ]
+
+    /// Aspect-fills an image into `rect`.
+    @MainActor
+    private static func drawFilled(_ image: CGImage, _ rect: CGRect, _ ctx: CGContext, flipped: Bool) {
+        let size = CGSize(width: image.width, height: image.height)
+        let scale = max(rect.width / size.width, rect.height / size.height)
+        let drawn = CGSize(width: size.width * scale, height: size.height * scale)
+        let target = CGRect(x: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2, width: drawn.width, height: drawn.height)
+        ctx.saveGState()
+        ctx.clip(to: rect)
+        if flipped { AnnotationRenderer.drawImage(image, in: target, ctx: ctx) } else { ctx.draw(image, in: target) }
+        ctx.restoreGState()
+    }
+
+    @MainActor private static var pictureCache: [URL: CGImage] = [:]
+    @MainActor private static var blurCache: [Int: (source: CGImage, result: CGImage)] = [:]
+
+    @MainActor
+    static func pictureImage(_ url: URL) -> CGImage? {
+        if let cached = pictureCache[url] { return cached }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                                          kCGImageSourceThumbnailMaxPixelSize: 3000,
+                                                                          kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary)
+        else { return nil }
+        pictureCache[url] = image
+        return image
+    }
+
+    /// The wallpaper blurred (and for 1 and 2, darkened), cached until the wallpaper changes.
+    @MainActor
+    static func blurredWallpaper(_ variant: Int) -> CGImage? {
+        guard let wallpaper = Wallpaper.image else { return nil }
+        if let cached = blurCache[variant], cached.source === wallpaper { return cached.result }
+        let small = min(1, 1200 / CGFloat(max(wallpaper.width, wallpaper.height)))
+        var input = CIImage(cgImage: wallpaper).transformed(by: .init(scaleX: small, y: small))
+        let extent = input.extent
+        input = input.clampedToExtent().applyingGaussianBlur(sigma: variant == 0 ? 18 : 28).cropped(to: extent)
+        if variant > 0 {
+            input = input.applyingFilter("CIColorControls", parameters: [kCIInputBrightnessKey: variant == 1 ? -0.12 : -0.3,
+                                                                       kCIInputSaturationKey: variant == 1 ? 1.1 : 0.7])
+        }
+        guard let result = CIContext().createCGImage(input, from: extent) else { return nil }
+        blurCache[variant] = (wallpaper, result)
+        return result
+    }
 
     /// Defined in OKLCH (lightness, chroma, hue) and drawn in Display P3.
     static let presets: [BackgroundFill] = [
@@ -38,6 +117,12 @@ enum BackgroundFill {
             ctx.clip(to: rect)
             ctx.drawLinearGradient(gradient, start: CGPoint(x: rect.minX, y: top), end: CGPoint(x: rect.maxX, y: bottom), options: [])
             ctx.restoreGState()
+        case .picture(let url):
+            guard let image = Self.pictureImage(url) else { return BackgroundFill.presets[1].fill(rect, in: ctx, flipped: flipped) }
+            Self.drawFilled(image, rect, ctx, flipped: flipped)
+        case .blurredWallpaper(let variant):
+            guard let image = Self.blurredWallpaper(variant) else { return BackgroundFill.presets[5].fill(rect, in: ctx, flipped: flipped) }
+            Self.drawFilled(image, rect, ctx, flipped: flipped)
         case .wallpaper:
             guard let image = Wallpaper.image else {
                 BackgroundFill.presets[1].fill(rect, in: ctx, flipped: flipped)
@@ -154,8 +239,34 @@ struct BackgroundStyle: Codable, Equatable {
     /// Custom colours chosen with the OKLCH picker (saved as P3); used when `fillIndex` is -1.
     var customFrom: String?
     var customTo: String?
+    /// Sidebar choice, overriding the older fields: "gradient:N", "solid:<P3>", "wallpaper",
+    /// "picture:<path>" or "blur:N".
+    var fillSpec: String?
+    /// Border of the screenshot's own edge colour around it, in points.
+    var inset: CGFloat?
+    /// Shadow strength 0…1 (older styles: `shadow` on = 0.5).
+    var shadowAmount: CGFloat?
+    /// Where the screenshot sits when the ratio leaves extra space: 0…8, left-to-right, top-to-bottom (4 = centre).
+    var alignment: Int?
+
+    var effectiveInset: CGFloat { inset ?? 0 }
+    var effectiveShadow: CGFloat { shadowAmount ?? (shadow ? 0.5 : 0) }
 
     var fill: BackgroundFill {
+        if let spec = fillSpec {
+            let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
+            switch parts.first {
+            case "gradient":
+                let i = Int(parts.last ?? "") ?? 0
+                let g = BackgroundFill.gradients[min(max(i, 0), BackgroundFill.gradients.count - 1)]
+                return .gradient(g.0, g.1)
+            case "solid": return .solid(NSColor(saved: parts.last ?? "") ?? .white)
+            case "wallpaper": return .wallpaper
+            case "picture": return .picture(URL(fileURLWithPath: parts.last ?? ""))
+            case "blur": return .blurredWallpaper(Int(parts.last ?? "") ?? 0)
+            default: break
+            }
+        }
         if fillIndex < 0 {
             let from = customFrom.flatMap(NSColor.init(saved:)) ?? .systemIndigo
             let to = customTo.flatMap(NSColor.init(saved:)) ?? from
@@ -166,6 +277,22 @@ struct BackgroundStyle: Codable, Equatable {
 
     /// Space left and right (width) and above and below (height) the content,
     /// widened on one side if needed to reach the chosen aspect ratio.
+    /// The whole canvas, and where the screenshot's top-left goes in it (points, top-left origin).
+    /// `content` is the screenshot; inset and padding go around it, and any extra room from the
+    /// ratio is shared out according to `alignment`.
+    func layout(for content: CGSize) -> (canvas: CGSize, origin: CGPoint) {
+        let framed = CGSize(width: content.width + 2 * effectiveInset, height: content.height + 2 * effectiveInset)
+        var w = framed.width + 2 * padding, h = framed.height + 2 * padding
+        if let ratio = Self.aspects[min(max(aspect, 0), Self.aspects.count - 1)].ratio {
+            if w / h < ratio { w = h * ratio } else { h = w / ratio }
+        }
+        let a = min(max(alignment ?? 4, 0), 8)
+        let fx = CGFloat(a % 3) / 2, fy = CGFloat(a / 3) / 2
+        let extraX = w - framed.width - 2 * padding, extraY = h - framed.height - 2 * padding
+        return (CGSize(width: w, height: h),
+                CGPoint(x: padding + extraX * fx + effectiveInset, y: padding + extraY * fy + effectiveInset))
+    }
+
     func insets(for content: CGSize) -> CGSize {
         var w = content.width + 2 * padding, h = content.height + 2 * padding
         if let ratio = Self.aspects[min(max(aspect, 0), Self.aspects.count - 1)].ratio {
@@ -225,29 +352,45 @@ enum BackgroundRenderer {
     /// Places the flattened screenshot on the background at full resolution.
     @MainActor
     static func compose(_ image: CGImage, scale: CGFloat, style: BackgroundStyle) -> CGImage? {
-        let inset = style.insets(for: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
-        let padX = Int((inset.width * scale).rounded()), padY = Int((inset.height * scale).rounded())
-        let width = image.width + 2 * padX
-        let height = image.height + 2 * padY
+        let content = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+        let layout = style.layout(for: content)
+        let width = Int((layout.canvas.width * scale).rounded()), height = Int((layout.canvas.height * scale).rounded())
         guard let ctx = AnnotationRenderer.makeContext(width: width, height: height, like: image) else { return nil }
         let full = CGRect(x: 0, y: 0, width: width, height: height)
-        let imageRect = CGRect(x: padX, y: padY, width: image.width, height: image.height)
+        // Bottom-left origin here, so flip the top-left layout position.
+        let x = (layout.origin.x * scale).rounded()
+        let y = CGFloat(height) - (layout.origin.y * scale).rounded() - CGFloat(image.height)
+        let imageRect = CGRect(x: x, y: y, width: CGFloat(image.width), height: CGFloat(image.height))
         style.fill.fill(full, in: ctx, flipped: false)
-        drawFramedImage(image, in: imageRect, radius: style.cornerRadius * scale,
-                        shadow: style.shadow, shadowScale: scale, ctx: ctx, flipped: false)
+        drawFramedImage(image, in: imageRect, radius: style.cornerRadius * scale, shadow: style.effectiveShadow,
+                        inset: style.effectiveInset * scale, shadowScale: scale, ctx: ctx, flipped: false)
         return ctx.makeImage()
     }
 
+    /// The screenshot's edge colour (its top-left pixel), used to fill the inset border.
+    static func edgeColor(of image: CGImage) -> CGColor {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let corner = image.cropping(to: CGRect(x: 0, y: 0, width: 1, height: 1)) else { return NSColor.white.cgColor }
+        ctx.draw(corner, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return CGColor(srgbRed: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
+    }
+
     /// Draws the image with rounded corners and an optional soft shadow.
-    static func drawFramedImage(_ image: CGImage, in rect: CGRect, radius: CGFloat, shadow: Bool,
+    /// Draws the screenshot with rounded corners, an optional edge-coloured inset border around it,
+    /// and a soft shadow of the given strength (0 = none).
+    static func drawFramedImage(_ image: CGImage, in rect: CGRect, radius: CGFloat, shadow: CGFloat, inset: CGFloat = 0,
                                 shadowScale: CGFloat, ctx: CGContext, flipped: Bool) {
-        let r = min(radius, rect.width / 2, rect.height / 2)
-        let path = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
-        if shadow {
+        let outer = rect.insetBy(dx: -inset, dy: -inset)
+        let r = min(radius, outer.width / 2, outer.height / 2)
+        let path = CGPath(roundedRect: outer, cornerWidth: r, cornerHeight: r, transform: nil)
+        if shadow > 0 {
             ctx.saveGState()
-            let dy = -8 * shadowScale // shadow offsets ignore the flip: negative is always down
-            ctx.setShadow(offset: CGSize(width: 0, height: dy), blur: 30 * shadowScale,
-                          color: NSColor.black.withAlphaComponent(0.4).cgColor)
+            let dy = -8 * shadowScale * (0.5 + shadow) // shadow offsets ignore the flip: negative is always down
+            ctx.setShadow(offset: CGSize(width: 0, height: dy), blur: 40 * shadowScale * shadow + 6 * shadowScale,
+                          color: NSColor.black.withAlphaComponent(0.15 + 0.5 * shadow).cgColor)
             ctx.addPath(path)
             ctx.setFillColor(NSColor.white.cgColor)
             ctx.fillPath()
@@ -256,6 +399,10 @@ enum BackgroundRenderer {
         ctx.saveGState()
         ctx.addPath(path)
         ctx.clip()
+        if inset > 0 {
+            ctx.setFillColor(edgeColor(of: image))
+            ctx.fill(outer)
+        }
         if flipped {
             AnnotationRenderer.drawImage(image, in: rect, ctx: ctx)
         } else {

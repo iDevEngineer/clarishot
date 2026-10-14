@@ -109,11 +109,12 @@ final class CanvasView: NSView, NSTextFieldDelegate {
 
     // MARK: Coordinate mapping (view points <-> image points)
 
-    /// Padding around the image when the background is on, in image points.
-    /// Space around the image for the background (x = sides, y = top and bottom), in image points.
-    private var backgroundInset: CGSize {
-        document.background.enabled ? document.background.insets(for: document.crop.size) : .zero
+    /// Canvas size and screenshot position (image points) when the background is on.
+    private var backgroundLayout: (canvas: CGSize, origin: CGPoint)? {
+        document.background.enabled ? document.background.layout(for: document.crop.size) : nil
     }
+
+    private var totalSize: CGSize { backgroundLayout?.canvas ?? document.crop.size }
 
     /// nil = fit the window; otherwise a fixed zoom (1 = 100%).
     var zoom: CGFloat? { didSet { pan = .zero; needsDisplay = true; window?.invalidateCursorRects(for: self); onZoomChange?() } }
@@ -124,8 +125,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     private var fitScale: CGFloat {
         let crop = document.crop
         let available = bounds.insetBy(dx: margin, dy: margin)
-        let inset = backgroundInset
-        let total = CGSize(width: crop.width + 2 * inset.width, height: crop.height + 2 * inset.height)
+        _ = crop
+        let total = totalSize
         return min(1, available.width / max(total.width, 1), available.height / max(total.height, 1))
     }
 
@@ -149,15 +150,17 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     /// Screenshot plus background, in view points.
     private var frameRectInView: CGRect {
         let s = viewScale
-        let inset = backgroundInset
-        let size = CGSize(width: (document.crop.width + 2 * inset.width) * s, height: (document.crop.height + 2 * inset.height) * s)
+        let size = CGSize(width: totalSize.width * s, height: totalSize.height * s)
         return CGRect(x: ((bounds.width - size.width) / 2 + pan.x).rounded(),
                       y: ((bounds.height - size.height) / 2 + pan.y).rounded(),
                       width: size.width, height: size.height)
     }
 
     private var imageRectInView: CGRect {
-        frameRectInView.insetBy(dx: backgroundInset.width * viewScale, dy: backgroundInset.height * viewScale)
+        let frame = frameRectInView, s = viewScale
+        guard let layout = backgroundLayout else { return frame }
+        return CGRect(x: frame.minX + layout.origin.x * s, y: frame.minY + layout.origin.y * s,
+                      width: document.crop.width * s, height: document.crop.height * s)
     }
 
     private func toImage(_ p: CGPoint) -> CGPoint {
@@ -198,7 +201,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         let annotations = visibleAnnotations()
         if style.enabled, let flat = renderedForView(annotations: annotations) {
             BackgroundRenderer.drawFramedImage(flat, in: imageRect, radius: style.cornerRadius * viewScale,
-                                               shadow: style.shadow, shadowScale: viewScale, ctx: ctx, flipped: true)
+                                               shadow: style.effectiveShadow, inset: style.effectiveInset * viewScale,
+                                               shadowScale: viewScale, ctx: ctx, flipped: true)
         } else {
             ctx.saveGState()
             ctx.clip(to: imageRect)
