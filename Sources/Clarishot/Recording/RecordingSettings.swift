@@ -82,7 +82,10 @@ final class RecordingSettingsViewController: NSViewController {
             stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
             stack.spacing = 26 // same rhythm as the other Settings tabs
             stack.translatesAutoresizingMaskIntoConstraints = false
-            stack.widthAnchor.constraint(equalToConstant: width - 40).isActive = true // the sections' width
+            for section in stack.arrangedSubviews {
+                section.translatesAutoresizingMaskIntoConstraints = false
+                section.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            }
             view = stack
             return
         }
@@ -120,7 +123,12 @@ final class RecordingSettingsViewController: NSViewController {
         column.alignment = .leading
         column.spacing = 9
         group.translatesAutoresizingMaskIntoConstraints = false
-        group.widthAnchor.constraint(equalToConstant: width - 40).isActive = true
+        if embedded {
+            // In Preferences the section stretches with the window.
+            group.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        } else {
+            group.widthAnchor.constraint(equalToConstant: width - 40).isActive = true
+        }
         return column
     }
 

@@ -43,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = CommandLine.arguments.firstIndex(of: "--settings") {
             let name = CommandLine.arguments.dropFirst(i + 1).first ?? ""
             SettingsWindowController.show(tab: SettingsTab.allCases.first { $0.title.lowercased().hasPrefix(name.lowercased()) && !name.isEmpty } ?? .general)
+            // `--width N`: open Preferences at that width (handy for checking layouts).
+            if let w = CommandLine.arguments.firstIndex(of: "--width").flatMap({ CommandLine.arguments.dropFirst($0 + 1).first }).flatMap(Double.init),
+               let window = NSApp.windows.first(where: { $0.title == "Preferences" }) {
+                window.setContentSize(CGSize(width: w, height: window.contentLayoutRect.height))
+            }
         }
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()

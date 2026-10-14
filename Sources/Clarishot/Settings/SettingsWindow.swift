@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let available = (NSScreen.main?.visibleFrame.height ?? 900) - 40
         window.setContentSize(CGSize(width: 810, height: min(860, available)))
         window.minSize = CGSize(width: 810, height: 480)
-        window.maxSize = CGSize(width: 810, height: 4000)
+        window.maxSize = CGSize(width: 1600, height: 4000)
         super.init(window: window)
         window.delegate = self
         window.useRoundedCorners()
@@ -261,7 +261,6 @@ class SettingsPane: NSViewController {
         let headerRow = NSStackView(views: [heading, NSView()] + (headerAccessory.map { [$0] } ?? []))
         headerRow.alignment = .centerY
         headerRow.translatesAutoresizingMaskIntoConstraints = false
-        headerRow.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         headerRow.heightAnchor.constraint(equalToConstant: 26).isActive = true
 
         body.orientation = .vertical
@@ -287,7 +286,12 @@ class SettingsPane: NSViewController {
         scroll.documentView = document
         scroll.automaticallyAdjustsContentInsets = false
         scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        // Everything stretches with the window; 540 pt is the narrowest.
+        body.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
+            headerRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
+            body.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
+            body.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.contentWidth),
             stack.topAnchor.constraint(equalTo: document.topAnchor),
             stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
@@ -304,7 +308,11 @@ class SettingsPane: NSViewController {
         targets.removeAll()
         blocks = []
         build()
-        blocks.forEach { body.addArrangedSubview($0) }
+        for block in blocks {
+            body.addArrangedSubview(block)
+            block.translatesAutoresizingMaskIntoConstraints = false
+            block.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+        }
     }
 
     /// Subclasses add sections here.
@@ -336,12 +344,12 @@ class SettingsPane: NSViewController {
         }
         let group = RecordingSettingsViewController.groupBox(rows)
         group.translatesAutoresizingMaskIntoConstraints = false
-        group.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         views.append(group)
         let column = NSStackView(views: views)
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 3
+        group.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         if views.count > 1 { column.setCustomSpacing(9, after: views[views.count - 2]) }
         blocks.append(column)
     }
@@ -831,7 +839,6 @@ final class ScreenshotsPane: SettingsPane {
         }
         let resetRow = horizontal(NSView(), reset)
         resetRow.translatesAutoresizingMaskIntoConstraints = false
-        resetRow.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         block(resetRow)
 
         let magnifier = toggle({ s.showMagnifier }, { s.showMagnifier = $0 })
