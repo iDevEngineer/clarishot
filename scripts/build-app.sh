@@ -22,6 +22,12 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Snapzy "$APP/Contents/MacOS/Snapzy"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+
+# App icon, drawn by the app itself (see AppIcon.swift).
+ICONSET=.build/Snapzy.iconset
+rm -rf "$ICONSET"
+.build/release/Snapzy --write-iconset "$ICONSET"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign "$SIGN_IDENTITY" "$APP"
 
 echo "Built $APP"

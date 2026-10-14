@@ -303,11 +303,40 @@ final class RecordingCoordinator {
         guard #available(macOS 15.0, *), let recorder = recorder as? ScreenRecorder, !busy else { return }
         busy = true
         Task {
+            // Pause while asking, so the question isn't recorded; resume if they cancel.
+            let wasPaused = recorder.isPaused
+            if !wasPaused {
+                await recorder.pause()
+                outline?.setRecording(false)
+                controlBar?.update(elapsed: recorder.elapsed, paused: true)
+            }
+            guard Self.confirmDelete() else {
+                if !wasPaused {
+                    do { try await recorder.resume() } catch { handleFailure(error) }
+                    outline?.setRecording(true)
+                }
+                busy = false
+                controlBar?.update(elapsed: recorder.elapsed, paused: recorder.isPaused)
+                return
+            }
             await recorder.discard()
             busy = false
             cancelAll()
             Toast.show("Recording discarded")
         }
+    }
+
+    /// "Are you sure you want to delete this recording?" with Snapzy's icon.
+    private static func confirmDelete() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Are you sure you want to delete this recording?"
+        alert.informativeText = "You can't undo this action."
+        alert.icon = AppIcon.make()
+        alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func stop() {
