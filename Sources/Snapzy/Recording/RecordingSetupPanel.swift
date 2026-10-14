@@ -40,7 +40,9 @@ struct RecordingOptions {
     ]
 
     static let clickColors: [(name: String, color: NSColor)] = [
-        ("System Accent color", .controlAccentColor), ("Yellow", .systemYellow), ("Red", .systemRed), ("Blue", .systemBlue), ("Green", .systemGreen), ("White", .white)
+        ("System Accent color", .controlAccentColor), ("Blue", .systemBlue), ("Purple", .systemPurple),
+        ("Pink", .systemPink), ("Red", .systemRed), ("Orange", .systemOrange), ("Yellow", .systemYellow),
+        ("Green", .systemGreen), ("Gray", .systemGray)
     ]
     var clickNSColor: NSColor { Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color }
     var clickDiameter: CGFloat { 24 + CGFloat(min(max(clickScale, 0), 1)) * 56 }

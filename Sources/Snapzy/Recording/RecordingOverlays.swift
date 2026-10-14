@@ -406,7 +406,7 @@ enum ClickRipple {
         ring.frame = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
         ring.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: size, height: size), transform: nil)
         let color = options.clickNSColor
-        ring.fillColor = options.clickFilled ? color.withAlphaComponent(0.35).cgColor : NSColor.clear.cgColor
+        ring.fillColor = options.clickFilled ? color.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
         ring.strokeColor = color.cgColor
         ring.lineWidth = 3
         layer.addSublayer(ring)
