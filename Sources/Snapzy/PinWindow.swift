@@ -132,7 +132,7 @@ private final class PinView: NSView {
     private var lockButton: CircleButton!
     private var pasteButton: PillButton!
     private var locked = false
-    private var resizeGrip: ResizeGrip?
+    private var resizeHandles: [ResizeHandle] = []
 
     init(frame: CGRect, image: CGImage) {
         super.init(frame: frame)
@@ -166,13 +166,17 @@ private final class PinView: NSView {
         pasteButton.setFrameOrigin(CGPoint(x: bounds.midX - pasteButton.frame.width / 2, y: inset))
         pasteButton.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
 
-        let grip = ResizeGrip(aspect: frame.width / max(frame.height, 1))
-        grip.isAllowed = { [weak self] in !(self?.locked ?? true) }
-        grip.setFrameOrigin(CGPoint(x: bounds.maxX - ResizeGrip.size - 2, y: 2))
-        grip.autoresizingMask = [.minXMargin, .maxYMargin]
-        resizeGrip = grip
+        // Resize from the left, right and bottom edges and both bottom corners.
+        let aspect = frame.width / max(frame.height, 1)
+        resizeHandles = ResizeHandle.Position.allCases.map { position in
+            let handle = ResizeHandle(position: position, aspect: aspect)
+            handle.isAllowed = { [weak self] in !(self?.locked ?? true) }
+            handle.place(in: bounds)
+            return handle
+        }
 
-        [close, lockButton, pasteButton, grip].forEach { controls.addSubview($0) }
+        resizeHandles.forEach { controls.addSubview($0) }
+        [close, lockButton, pasteButton].forEach { controls.addSubview($0) }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -187,7 +191,7 @@ private final class PinView: NSView {
         lockButton.toolTip = locked ? "Unlock" : "Lock: only allow closing"
         pasteButton.isEnabled = !locked
         pasteButton.alphaValue = locked ? 0.4 : 1
-        resizeGrip?.alphaValue = locked ? 0.3 : 1
+        resizeHandles.forEach { $0.alphaValue = locked ? 0.3 : 1 }
         onLockChange?(locked)
     }
 
@@ -214,48 +218,103 @@ private final class PinView: NSView {
 
 }
 
-/// Bottom-right grip: drag to resize the pin, keeping its shape and top-left corner.
+/// A resize zone on one edge or bottom corner of a pin. Dragging scales the pin,
+/// keeping its shape; the top edge and the opposite side stay where they are.
 @MainActor
-private final class ResizeGrip: NSView {
-    static let size: CGFloat = 20
+private final class ResizeHandle: NSView {
+    enum Position: CaseIterable { case left, right, bottom, bottomLeft, bottomRight }
+
     var isAllowed: () -> Bool = { true }
+    private let position: Position
     private let aspect: CGFloat
     private var startMouse: CGPoint?
     private var startFrame: CGRect = .zero
+    private static let edge: CGFloat = 12    // thickness of the edge zones
+    private static let corner: CGFloat = 30  // size of the corner zones
 
-    init(aspect: CGFloat) {
+    init(position: Position, aspect: CGFloat) {
+        self.position = position
         self.aspect = aspect
-        super.init(frame: CGRect(x: 0, y: 0, width: Self.size, height: Self.size))
+        super.init(frame: .zero)
         toolTip = "Drag to resize"
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// Sizes and anchors the zone to its edge of the pin.
+    func place(in bounds: CGRect) {
+        let e = Self.edge, c = Self.corner
+        switch position {
+        case .left:
+            frame = CGRect(x: 0, y: c, width: e, height: bounds.height - c - 40)
+            autoresizingMask = [.maxXMargin, .height]
+        case .right:
+            frame = CGRect(x: bounds.maxX - e, y: c, width: e, height: bounds.height - c - 40)
+            autoresizingMask = [.minXMargin, .height]
+        case .bottom:
+            frame = CGRect(x: c, y: 0, width: bounds.width - 2 * c, height: e)
+            autoresizingMask = [.width, .maxYMargin]
+        case .bottomLeft:
+            frame = CGRect(x: 0, y: 0, width: c, height: c)
+            autoresizingMask = [.maxXMargin, .maxYMargin]
+        case .bottomRight:
+            frame = CGRect(x: bounds.maxX - c, y: 0, width: c, height: c)
+            autoresizingMask = [.minXMargin, .maxYMargin]
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        // Three short diagonal lines, white over a dark edge so they show on any image.
-        for (color, width) in [(NSColor.black.withAlphaComponent(0.45), 3.0), (NSColor.white, 1.5)] {
-            let path = NSBezierPath()
-            for inset in [4.0, 9.0, 14.0] {
-                path.move(to: CGPoint(x: bounds.maxX - 3, y: inset))
-                path.line(to: CGPoint(x: inset, y: 3))
-            }
-            path.lineWidth = width
-            path.lineCapStyle = .round
-            color.setStroke()
+        switch position {
+        case .left, .right, .bottom:
+            // A short white bar in the middle of the edge.
+            let vertical = position != .bottom
+            let length: CGFloat = 36, thickness: CGFloat = 5
+            let bar = vertical
+                ? CGRect(x: bounds.midX - thickness / 2, y: bounds.midY - length / 2, width: thickness, height: length)
+                : CGRect(x: bounds.midX - length / 2, y: bounds.midY - thickness / 2, width: length, height: thickness)
+            let path = NSBezierPath(roundedRect: bar, xRadius: thickness / 2, yRadius: thickness / 2)
+            NSColor.black.withAlphaComponent(0.4).setStroke()
+            path.lineWidth = 2
             path.stroke()
+            NSColor.white.setFill()
+            path.fill()
+        case .bottomLeft, .bottomRight:
+            // Three diagonal lines, larger than a standard grip.
+            let flip = position == .bottomLeft
+            for (color, width) in [(NSColor.black.withAlphaComponent(0.45), 3.5), (NSColor.white, 2.0)] {
+                let path = NSBezierPath()
+                for inset in [6.0, 13.0, 20.0] {
+                    let a = CGPoint(x: flip ? 4 : bounds.maxX - 4, y: inset)
+                    let b = CGPoint(x: flip ? bounds.maxX - inset : inset, y: 4)
+                    path.move(to: a)
+                    path.line(to: b)
+                }
+                path.lineWidth = width
+                path.lineCapStyle = .round
+                color.setStroke()
+                path.stroke()
+            }
         }
     }
 
     override func resetCursorRects() {
         if #available(macOS 15.0, *) {
-            addCursorRect(bounds, cursor: .frameResize(position: .bottomRight, directions: .all))
+            let p: NSCursor.FrameResizePosition
+            switch position {
+            case .left: p = .left
+            case .right: p = .right
+            case .bottom: p = .bottom
+            case .bottomLeft: p = .bottomLeft
+            case .bottomRight: p = .bottomRight
+            }
+            addCursorRect(bounds, cursor: .frameResize(position: p, directions: .all))
         } else {
-            addCursorRect(bounds, cursor: .crosshair)
+            addCursorRect(bounds, cursor: position == .bottom ? .resizeUpDown : .resizeLeftRight)
         }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    /// Dragging the grip resizes; it must not move the window instead.
+    /// Dragging a handle resizes; it must not move the window instead.
     override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
@@ -267,12 +326,22 @@ private final class ResizeGrip: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start = startMouse, let window else { return }
         let now = NSEvent.mouseLocation
-        // Right or down makes it bigger; follow whichever direction moved further.
-        let dx = now.x - start.x, dy = (start.y - now.y) * aspect
+        let dx = now.x - start.x
+        let down = (start.y - now.y) * aspect // dragging down, in width units
+        func larger(_ a: CGFloat, _ b: CGFloat) -> CGFloat { abs(a) > abs(b) ? a : b }
+        let grow: CGFloat
+        switch position {
+        case .right: grow = dx
+        case .left: grow = -dx
+        case .bottom: grow = down
+        case .bottomRight: grow = larger(dx, down)
+        case .bottomLeft: grow = larger(-dx, down)
+        }
         let maxWidth = (window.screen?.visibleFrame.width ?? 4000) - 20
-        let width = min(max(startFrame.width + (abs(dx) > abs(dy) ? dx : dy), 80), maxWidth)
+        let width = min(max(startFrame.width + grow, 80), maxWidth)
         let height = width / aspect
-        window.setFrame(CGRect(x: startFrame.minX, y: startFrame.maxY - height, width: width, height: height), display: true)
+        let x = (position == .left || position == .bottomLeft) ? startFrame.maxX - width : startFrame.minX
+        window.setFrame(CGRect(x: x, y: startFrame.maxY - height, width: width, height: height), display: true)
         window.invalidateShadow()
     }
 
