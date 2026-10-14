@@ -9,7 +9,13 @@ final class Settings {
 
     private let defaults = UserDefaults.standard
 
-    enum ImageFormat: String, CaseIterable { case png, jpeg }
+    enum ImageFormat: String, CaseIterable {
+        case png, jpeg, webp, avif
+        var title: String { rawValue.uppercased() == "WEBP" ? "WebP" : rawValue.uppercased() }
+        var fileExtension: String { self == .jpeg ? "jpg" : rawValue }
+        /// Formats with a quality setting.
+        var isLossy: Bool { self != .png }
+    }
 
     enum WindowStyle: String, CaseIterable {
         case transparent, shadow, background

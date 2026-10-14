@@ -68,7 +68,7 @@ final class Capture {
             return "\(Self.expand(settings.recordingNameTemplate, date)).\(videoURL.pathExtension)"
         }
         let suffix = scale > 1 && settings.retinaSuffix ? "@\(Int(scale))x" : ""
-        let ext = settings.imageFormat == .jpeg ? "jpg" : "png"
+        let ext = settings.imageFormat.fileExtension
         return "\(Self.expand(settings.screenshotNameTemplate, date))\(suffix).\(ext)"
     }
 
@@ -93,12 +93,9 @@ final class Capture {
 
     /// Encoded image in the format chosen in Settings.
     func imageData() -> Data? {
-        let rep = NSBitmapImageRep(cgImage: image)
-        rep.size = pointSize
-        if Settings.shared.imageFormat == .jpeg {
-            return rep.representation(using: .jpeg, properties: [.compressionFactor: Settings.shared.jpegQuality])
-        }
-        return rep.representation(using: .png, properties: [:])
+        let settings = Settings.shared
+        return ImageEncoder.encode(image, as: settings.imageFormat, quality: settings.jpegQuality, pointSize: pointSize)
+            ?? ImageEncoder.encode(image, as: .png, quality: 1, pointSize: pointSize)
     }
 
     /// Images go on the clipboard as pictures; recordings as the file itself.

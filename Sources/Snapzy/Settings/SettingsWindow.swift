@@ -692,16 +692,17 @@ final class WallpaperPane: SettingsPane {
 final class ScreenshotsPane: SettingsPane {
     override func build() {
         let s = Settings.shared
-        let formats = Settings.ImageFormat.allCases
+        let formats = ImageEncoder.available
         let presets = BackgroundPresets.all.map(\.name)
         var output = [
-            row("File format", popup(["PNG", "JPEG"], selected: formats.firstIndex(of: s.imageFormat) ?? 0) { [weak self] in
+            row("File format", popup(formats.map(\.title), selected: formats.firstIndex(of: s.imageFormat) ?? 0) { [weak self] in
                 s.imageFormat = formats[$0]
                 self?.rebuild()
             })
         ]
-        if s.imageFormat == .jpeg {
-            output.append(row("JPEG quality", slider(s.jpegQuality, 0.3...1) { s.jpegQuality = $0 }))
+        if s.imageFormat.isLossy {
+            output.append(row("Quality", slider(s.jpegQuality, 0.3...1) { s.jpegQuality = $0 },
+                              note: s.imageFormat == .webp ? "All the way right saves lossless WebP." : nil))
         }
         section("Output", output)
         section(nil, [
@@ -716,9 +717,9 @@ final class ScreenshotsPane: SettingsPane {
             }, note: "Apply Background Tool preset to all screenshots. You can create presets in Annotate.")
         ])
 
-        let delays = [3, 5, 10]
+        let delays = [3, 5, 10, 15]
         section("Capture", [
-            row("Self-Timer interval", popup(["3 Seconds", "5 Seconds", "10 Seconds"],
+            row("Self-Timer interval", popup(["3 Seconds", "5 Seconds", "10 Seconds", "15 Seconds"],
                                              selected: delays.firstIndex(of: s.selfTimerSeconds) ?? 1) {
                 s.selfTimerSeconds = delays[$0]
             }),

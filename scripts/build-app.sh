@@ -23,6 +23,19 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Snapzy "$APP/Contents/MacOS/Snapzy"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# WebP encoder: Google's libwebp (BSD licence), copied from Homebrew if installed.
+WEBP_LIB=/opt/homebrew/opt/webp/lib
+if [ -f "$WEBP_LIB/libwebp.7.dylib" ]; then
+    mkdir -p "$APP/Contents/Frameworks"
+    cp "$WEBP_LIB/libwebp.7.dylib" "$WEBP_LIB/libsharpyuv.0.dylib" "$APP/Contents/Frameworks/"
+    chmod u+w "$APP/Contents/Frameworks/"*.dylib
+    install_name_tool -id @rpath/libsharpyuv.0.dylib "$APP/Contents/Frameworks/libsharpyuv.0.dylib" 2>/dev/null
+    install_name_tool -id @rpath/libwebp.7.dylib "$APP/Contents/Frameworks/libwebp.7.dylib" 2>/dev/null
+    install_name_tool -change @rpath/libsharpyuv.0.dylib @loader_path/libsharpyuv.0.dylib \
+        "$APP/Contents/Frameworks/libwebp.7.dylib" 2>/dev/null
+    for lib in "$APP/Contents/Frameworks/"*.dylib; do codesign --force --sign "$SIGN_IDENTITY" "$lib"; done
+fi
+
 # App icon: the artwork in Resources/Brand if present, otherwise drawn by the app (AppIcon.swift).
 ICONSET=.build/Snapzy.iconset
 rm -rf "$ICONSET"
