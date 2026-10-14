@@ -20,7 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 - Curved tapered arrows now taper from a thin tail to a thick head.
 - Annotate opens with the Select tool instead of Arrow.
-- A new background starts with no padding, corners or shadow (choosing a fill adds some padding).
+- A new background starts with no padding, corners or shadow.
 - The background custom-colour picker no longer closes while you adjust it.
 - Background sidebar: sliders no longer jump when picking a colour; alignment now places the
   screenshot flush against the chosen edge or corner, with icons showing each position.
