@@ -13,6 +13,9 @@ final class RecordingCoordinator {
     private var controlBar: RecordingControlBar?
     private var camera: CameraBubble?
     private var clicks: ClickHighlightWindow?
+    /// Clicks inside the recorded area, for automatic zooms in the zoom editor.
+    private var clickLog: [RecordedClick] = []
+    private var clickMonitor: Any?
     private var keys: KeystrokeWindow?
     private var recorder: AnyObject? // ScreenRecorder (macOS 15+)
     private var tick: Timer?
@@ -252,6 +255,7 @@ final class RecordingCoordinator {
         self.recorder = recorder
         busy = false
         outline?.setRecording(true)
+        startClickLog(recorder: recorder, area: globalRect)
         if options.dimScreen {
             // Darken everything outside the recorded area (not included in the video).
             let dim = ScrollDimWindow(screen: region.screen, hole: globalRect)
@@ -280,6 +284,23 @@ final class RecordingCoordinator {
             MainActor.assumeIsolated { self?.controlBar?.update(elapsed: recorder.elapsed, paused: recorder.isPaused) }
         }
         controlBar?.update(elapsed: recorder.elapsed, paused: recorder.isPaused)
+    }
+
+    /// Notes each click inside the recorded area with the recorded time (pauses excluded).
+    @available(macOS 15.0, *)
+    private func startClickLog(recorder: ScreenRecorder, area: CGRect) {
+        clickLog = []
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self, weak recorder] _ in
+            MainActor.assumeIsolated {
+                guard let self, let recorder, !recorder.isPaused else { return }
+                let p = NSEvent.mouseLocation
+                guard area.contains(p) else { return }
+                self.clickLog.append(RecordedClick(t: recorder.elapsed,
+                                                   x: (p.x - area.minX) / area.width,
+                                                   y: (area.maxY - p.y) / area.height))
+            }
+        }
     }
 
     func togglePause() {
@@ -357,6 +378,7 @@ final class RecordingCoordinator {
         Task {
             do {
                 let url = try await recorder.finish()
+                ClickLog.save(clickLog, for: url)
                 busy = false
                 cancelAll()
                 showPreview(for: url, format: format)
@@ -376,6 +398,8 @@ final class RecordingCoordinator {
     /// Removes every recording window and restores the menu-bar icon.
     private func cancelAll() {
         recorder = nil
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
         tick?.invalidate()
         tick = nil
         controlBar?.orderOut(nil)

@@ -224,6 +224,14 @@ final class HistoryWindowController: NSObject, NSWindowDelegate, NSCollectionVie
             add("Open in Annotate") { [weak self] in self?.with(item, closing: true) { AnnotateWindowController.open($0) } }
             add("Pin to the Screen") { [weak self] in self?.with(item, closing: true) { PinWindow.pin($0) } }
         }
+        if item.kind == .recording, #available(macOS 15.0, *) {
+            add("Edit Zooms…") { [weak self] in
+                self?.with(item, closing: true) { capture in
+                    guard let url = capture.videoURL else { return }
+                    ZoomEditorController.open(url, sourceBundleID: capture.sourceBundleID)
+                }
+            }
+        }
         add("Copy") { [weak self] in self?.with(item) { $0.copyToClipboard(); Toast.show("Copied to clipboard") } }
         add("Save to Export Folder") { [weak self] in
             self?.with(item) { capture in

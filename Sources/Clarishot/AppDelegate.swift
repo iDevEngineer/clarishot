@@ -43,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Shortcuts.registerAll()
             }
         }
+        // `--zoom-editor <movie>` opens the zoom editor on a movie (handy for checking it).
+        if #available(macOS 15.0, *), let i = CommandLine.arguments.firstIndex(of: "--zoom-editor"),
+           let path = CommandLine.arguments.dropFirst(i + 1).first {
+            ZoomEditorController.open(URL(fileURLWithPath: path), sourceBundleID: nil)
+        }
         // `open Clarishot.app --args --settings` opens Settings straight away.
         if let i = CommandLine.arguments.firstIndex(of: "--settings") {
             let name = CommandLine.arguments.dropFirst(i + 1).first ?? ""

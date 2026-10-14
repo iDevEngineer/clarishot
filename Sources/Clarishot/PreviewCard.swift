@@ -378,6 +378,10 @@ final class PreviewCardView: NSView, NSDraggingSource {
         ]
         if capture.isVideo {
             corners.append(("scissors", "Trim", CGPoint(x: inset, y: inset), { [weak self] in self?.trim() }))
+            if !capture.isGIF {
+                corners.append(("plus.magnifyingglass", "Edit Zooms", CGPoint(x: b.maxX - inset - size, y: b.maxY - inset - size),
+                                { [weak self] in self?.editZooms() }))
+            }
         } else {
             corners.append(("pin.fill", "Pin to the screen", CGPoint(x: b.maxX - inset - size, y: b.maxY - inset - size),
                             { [weak self] in self?.pin() }))
@@ -446,6 +450,12 @@ final class PreviewCardView: NSView, NSDraggingSource {
 
     private func annotate() {
         AnnotateWindowController.open(capture)
+        onDismiss?()
+    }
+
+    private func editZooms() {
+        guard #available(macOS 15.0, *), let url = capture.videoURL else { return }
+        ZoomEditorController.open(url, sourceBundleID: capture.sourceBundleID)
         onDismiss?()
     }
 

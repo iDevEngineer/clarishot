@@ -160,6 +160,18 @@ started on text run straight along the line. Hold **⌘** while dragging to turn
    **delete**. The menu-bar icon becomes a red stop button with a timer.
 5. When you stop, a preview card appears. The scissors button trims the recording.
 
+### Zooms
+Click the **magnifying glass** on a recording's preview card (or **Edit Zooms…** in Capture
+History's right-click menu). Clarishot noted every click you made while recording, and places a
+2× zoom on each one, easing in and out.
+- **Timeline:** zooms are blue bars; orange dots are your clicks. Drag a bar to move it, drag its
+  ends to change its length, double-click empty space to add one.
+- **Select a zoom** to set how far it zooms (1.25× to 3.5×) and to aim it: the preview shows the
+  whole frame with the zoomed area outlined; click or drag to move it.
+- **Play** (Space) shows the finished result. **Auto Zoom** puts back the zooms from your clicks.
+- **Export** makes a new movie with the zooms and shows it on a preview card. The original stays
+  as it was.
+
 Recording options (frame rate, resolution, GIF size and quality, click-highlight look, keystroke style)
 are in **Preferences → Screen Recording** or the sliders button on the recording panel.
 

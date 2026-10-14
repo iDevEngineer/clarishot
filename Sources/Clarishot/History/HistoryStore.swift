@@ -64,6 +64,7 @@ final class HistoryStore {
         do {
             if let video = capture.videoURL {
                 try FileManager.default.copyItem(at: video, to: url)
+                ClickLog.copy(from: capture.sourceVideoURL ?? video, to: url)
             } else {
                 // Always PNG here so history keeps full quality.
                 let rep = NSBitmapImageRep(cgImage: capture.image)

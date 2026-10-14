@@ -42,6 +42,7 @@ built-in MCP server.
 - Camera bubble (circle, square, rectangle or vertical) that can go full screen
 - Click highlights (size, colour, ripples) and on-screen keystrokes
 - Pause, restart, countdown, dimming outside the area, and trimming afterwards
+- Zoom editor: automatic zooms where you clicked, adjustable on a timeline, exported as a new movie
 
 **Automation**
 - **MCP server** so Claude Code, Claude Desktop, Cursor and other AI tools can take and read screenshots
