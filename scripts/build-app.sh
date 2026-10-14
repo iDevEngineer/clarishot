@@ -66,3 +66,11 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign "$SIGN_IDENTITY" "$APP"
 
 echo "Built $APP"
+
+# Keep /Applications/Clarishot.app in step with every build (skip with INSTALL=0).
+if [ "${INSTALL:-1}" = "1" ]; then
+    pkill -x Clarishot 2>/dev/null || true
+    rm -rf /Applications/Clarishot.app
+    ditto "$APP" /Applications/Clarishot.app
+    echo "Installed /Applications/Clarishot.app"
+fi
