@@ -403,8 +403,17 @@ class SettingsPane: NSViewController {
         let line = NSStackView(views: [icon, column, NSView(), control])
         line.spacing = 12
         line.alignment = .centerY
-        line.edgeInsets = NSEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
-        return line
+        // Padding via a container: the group box ignores a stack's own edge insets.
+        let container = NSView()
+        line.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            line.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            line.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
+        ])
+        return container
     }
 
     func toggle(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> NSSwitch {
