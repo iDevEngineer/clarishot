@@ -212,23 +212,26 @@ final class OklchColorButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if showsWheel, let ctx = NSGraphicsContext.current?.cgContext {
-            // A hue ring (drawn as thin wedges) with the current colour in the middle.
+            // A full colour wheel: hues around the edge fading to white in the middle.
             let center = CGPoint(x: bounds.midX, y: bounds.midY)
             let radius = min(bounds.width, bounds.height) / 2 - 0.5
-            let steps = 72
+            ctx.saveGState()
+            ctx.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+            ctx.clip()
+            let steps = 90
             for i in 0..<steps {
-                let a0 = CGFloat(i) / CGFloat(steps) * 2 * .pi, a1 = CGFloat(i + 1) / CGFloat(steps) * 2 * .pi + 0.02
+                let a0 = CGFloat(i) / CGFloat(steps) * 2 * .pi, a1 = CGFloat(i + 1) / CGFloat(steps) * 2 * .pi + 0.03
                 ctx.move(to: center)
-                ctx.addArc(center: center, radius: radius, startAngle: a0, endAngle: a1, clockwise: false)
+                ctx.addArc(center: center, radius: radius + 1, startAngle: a0, endAngle: a1, clockwise: false)
                 ctx.closePath()
-                ctx.setFillColor(NSColor(oklch: 0.72, 0.16, Double(i) / Double(steps) * 360).cgColor)
+                ctx.setFillColor(NSColor(hue: CGFloat(i) / CGFloat(steps), saturation: 1, brightness: 1, alpha: 1).cgColor)
                 ctx.fillPath()
             }
-            let inner = bounds.insetBy(dx: bounds.width * 0.25, dy: bounds.height * 0.25)
-            ctx.setFillColor(NSColor.windowBackgroundColor.cgColor)
-            ctx.fillEllipse(in: inner.insetBy(dx: -1, dy: -1))
-            ctx.setFillColor(color.cgColor)
-            ctx.fillEllipse(in: inner)
+            let white = [NSColor.white.cgColor, NSColor.white.withAlphaComponent(0).cgColor] as CFArray
+            if let fade = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: white, locations: [0, 1]) {
+                ctx.drawRadialGradient(fade, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
+            }
+            ctx.restoreGState()
             return
         }
         let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: bounds.height / 2, yRadius: bounds.height / 2)

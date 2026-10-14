@@ -502,25 +502,28 @@ private final class AlignmentDot: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: 26).isActive = true
-        heightAnchor.constraint(equalToConstant: 18).isActive = true
+        heightAnchor.constraint(equalToConstant: 20).isActive = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func draw(_ dirtyRect: NSRect) {
-        let outer = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
-        NSColor.labelColor.withAlphaComponent(selected ? 0.2 : 0.08).setFill()
-        outer.fill()
-        // A small "screenshot" block pushed toward the matching corner or edge.
-        let box = bounds.insetBy(dx: 4, dy: 3)
-        let size = CGSize(width: box.width * 0.5, height: box.height * 0.5)
+        // An outlined frame with a solid block pushed flush to this position; the chosen one is
+        // fully bright, the rest faded so it stands out.
+        let alpha: CGFloat = selected ? 1 : 0.35
+        let frame = bounds.insetBy(dx: 2, dy: 2)
+        let outline = NSBezierPath(roundedRect: frame, xRadius: 4, yRadius: 4)
+        outline.lineWidth = 1.5
+        NSColor.labelColor.withAlphaComponent(alpha).setStroke()
+        outline.stroke()
+        let inner = frame.insetBy(dx: 2.5, dy: 2.5)
+        let size = CGSize(width: inner.width * 0.55, height: inner.height * 0.55)
         let fx = CGFloat(position % 3) / 2, fy = CGFloat(position / 3) / 2
-        let block = CGRect(x: box.minX + (box.width - size.width) * fx,
-                           y: box.maxY - size.height - (box.height - size.height) * fy,  // row 0 is the top
+        let block = CGRect(x: inner.minX + (inner.width - size.width) * fx,
+                           y: inner.maxY - size.height - (inner.height - size.height) * fy,  // row 0 is the top
                            width: size.width, height: size.height)
-        let inner = NSBezierPath(roundedRect: block, xRadius: 1.5, yRadius: 1.5)
-        (selected ? NSColor.labelColor : NSColor.secondaryLabelColor).setFill()
-        inner.fill()
+        NSColor.labelColor.withAlphaComponent(alpha).setFill()
+        NSBezierPath(roundedRect: block, xRadius: 2, yRadius: 2).fill()
     }
 
     override func mouseDown(with event: NSEvent) { onClick() }
