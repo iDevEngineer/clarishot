@@ -151,10 +151,8 @@ enum AgentAPI {
 
     private static func ocr(_ p: [String: Any]) async throws -> [String: Any] {
         let image: CGImage
-        if let path = p["path"] as? String {
-            guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
-                  let loaded = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw AgentError("Can't read the image at \(path)") }
-            image = loaded
+        if p["image_base64"] != nil {
+            image = try decodedImage(p)
         } else {
             let mode = p["mode"] as? String ?? (p["x"] != nil ? "area" : "interactive")
             image = try await self.image(mode: mode, p).image
@@ -176,10 +174,18 @@ enum AgentAPI {
             }
     }
 
+    /// Files are read by the calling tool and sent as bytes, never opened here by path:
+    /// Snapzy may hold folder permissions the caller doesn't, and must not read files for it.
+    private static func decodedImage(_ p: [String: Any]) throws -> CGImage {
+        guard let base64 = p["image_base64"] as? String, let data = Data(base64Encoded: base64),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw AgentError("That isn't an image Snapzy can read") }
+        return image
+    }
+
     private static func open(_ p: [String: Any]) throws -> [String: Any] {
-        guard let path = p["path"] as? String,
-              let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw AgentError("open needs the path of an image") }
+        let image = try decodedImage(p)
+        let path = p["name"] as? String ?? "image"
         let capture = Capture(image: image, scale: NSScreen.main?.backingScaleFactor ?? 2)
         switch p["action"] as? String ?? "annotate" {
         case "pin": PinWindow.pin(capture)

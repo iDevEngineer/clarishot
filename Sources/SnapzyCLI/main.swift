@@ -13,6 +13,13 @@ struct CLIError: Error { let message: String }
 let socketPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Snapzy/agent.sock").path
 
+/// Reads an image file with the caller's own permissions and returns the params Snapzy expects.
+func imageParams(_ path: String) throws -> [String: Any] {
+    let url = URL(fileURLWithPath: path).standardizedFileURL
+    guard let data = try? Data(contentsOf: url) else { throw CLIError(message: "Can't read \(url.path)") }
+    return ["image_base64": data.base64EncodedString(), "name": url.path]
+}
+
 /// Sends one request and returns `result`, or throws the app's error.
 func call(_ method: String, _ params: [String: Any] = [:]) throws -> Any {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -133,7 +140,7 @@ func runCommand(_ args: [String]) throws {
         show(try call("screenshot", p)) { ($0 as? [String: Any])?["path"] as? String ?? "" }
     case "ocr":
         var p: [String: Any] = [:]
-        if let path = value(after: "--path", in: args) { p["path"] = path }
+        if let path = value(after: "--path", in: args) { p = try imageParams(path) }
         else if let area = value(after: "--area", in: args) { p = try areaParams(area); p["mode"] = "area" }
         else { p["mode"] = "interactive" }
         show(try call("ocr", p)) { ($0 as? [String: Any])?["text"] as? String ?? "" }
@@ -147,8 +154,9 @@ func runCommand(_ args: [String]) throws {
     case "open":
         guard let file = args.dropFirst().first(where: { !$0.hasPrefix("--") }) else { throw CLIError(message: "open needs a file") }
         let action = args.contains("--pin") ? "pin" : (args.contains("--preview") ? "preview" : "annotate")
-        let path = URL(fileURLWithPath: file).standardizedFileURL.path
-        show(try call("open", ["path": path, "action": action])) { _ in "Opened \(path)" }
+        var p = try imageParams(file)
+        p["action"] = action
+        show(try call("open", p)) { _ in "Opened \(file)" }
     case "record":
         switch args.dropFirst().first {
         case "start": show(try call("record_start")) { ($0 as? [String: Any])?["started"] as? String ?? "" }
@@ -250,10 +258,18 @@ final class MCPServer {
                 return ["content": content, "isError": false]
             case "read_text":
                 var params = args
-                if params["path"] == nil, params["mode"] == nil { params["mode"] = params["x"] != nil ? "area" : "interactive" }
+                if let path = params.removeValue(forKey: "path") as? String {
+                    params.merge(try imageParams(path)) { $1 }
+                } else if params["mode"] == nil {
+                    params["mode"] = params["x"] != nil ? "area" : "interactive"
+                }
                 return text((try call("ocr", params) as? [String: Any])?["text"] as? String ?? "")
             case "recent_captures": return text(json(try call("history", args)))
-            case "open_capture": return text(json(try call("open", args)))
+            case "open_capture":
+                guard let path = args["path"] as? String else { return text("open_capture needs path", error: true) }
+                var params = try imageParams(path)
+                params["action"] = args["action"] ?? "annotate"
+                return text(json(try call("open", params)))
             case "start_recording": return text(json(try call("record_start")))
             case "stop_recording": return text(json(try call("record_stop")))
             default: return text("Unknown tool \(name)", error: true)
