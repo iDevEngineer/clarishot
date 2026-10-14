@@ -7,6 +7,16 @@ extension NSWindow {
     func useRoundedCorners(_ radius: CGFloat = 26) {
         styleMask.insert(.fullSizeContentView)
         titlebarAppearsTransparent = true
+        // An empty unified toolbar makes the title area taller, so macOS insets the window
+        // buttons further from the top-left corner (as Apple's own apps do), which suits the
+        // rounder corners.
+        if toolbar == nil {
+            let bar = NSToolbar(identifier: "ClarishotRoomyTitlebar")
+            bar.showsBaselineSeparator = false
+            toolbar = bar
+            toolbarStyle = .unified
+        }
+        titlebarSeparatorStyle = .none
         isOpaque = false
         backgroundColor = .clear
         guard let content = contentView else { return }

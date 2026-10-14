@@ -21,9 +21,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Settings"
-        // Tall like the reference (~950 pt), but never taller than the screen allows.
+        // Tall, but never taller than the screen allows.
         let available = (NSScreen.main?.visibleFrame.height ?? 900) - 40
-        window.setContentSize(CGSize(width: 810, height: min(940, available)))
+        window.setContentSize(CGSize(width: 810, height: min(860, available)))
         window.minSize = CGSize(width: 810, height: 480)
         window.maxSize = CGSize(width: 810, height: 4000)
         super.init(window: window)
