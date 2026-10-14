@@ -20,6 +20,9 @@ final class RecordingCoordinator {
     private var format: RecordingFormat = .video
     private var region: (screen: NSScreen, rect: CGRect)?
     private var busy = false
+    /// The last recorded area, for "Remember last selection".
+    private var lastRegion: (screen: NSScreen, rect: CGRect)?
+    private var dimWindow: ScrollDimWindow?
     /// The app under the recorded area when recording started.
     private var sourceBundleID: String?
 
@@ -39,6 +42,10 @@ final class RecordingCoordinator {
     }
 
     private func chooseArea() {
+        if options.rememberSelection, let last = lastRegion, NSScreen.screens.contains(last.screen) {
+            showSetup(screen: last.screen, rect: last.rect)
+            return
+        }
         CaptureCoordinator.shared.selectRegion(hint: "Drag to record a part of the screen. Press Space to select a window.",
                                                allowsWindowPick: true) { [weak self] shot, rect in
             self?.showSetup(screen: shot.screen, rect: rect)
@@ -165,6 +172,7 @@ final class RecordingCoordinator {
 
     private func beginRecording(_ format: RecordingFormat) {
         guard #available(macOS 15.0, *), globalRect != nil else { return }
+        lastRegion = region
         self.format = format
         setupPanel?.orderOut(nil)
         setupPanel = nil
@@ -195,14 +203,14 @@ final class RecordingCoordinator {
         var included: [NSWindow] = DesktopIconHider.shared.windows
         if let camera { included.append(camera) }
         if options.highlightClicks, clicks == nil {
-            let window = ClickHighlightWindow(rect: globalRect)
+            let window = ClickHighlightWindow(rect: globalRect, options: options)
             window.orderFrontRegardless()
             window.startMonitoring()
             clicks = window
         }
         if let clicks { included.append(clicks) }
         if options.showKeystrokes, keys == nil, AXIsProcessTrusted() {
-            let window = KeystrokeWindow(rect: globalRect)
+            let window = KeystrokeWindow(rect: globalRect, options: options)
             window.orderFrontRegardless()
             window.startMonitoring()
             keys = window
@@ -222,6 +230,12 @@ final class RecordingCoordinator {
         self.recorder = recorder
         busy = false
         outline?.setRecording(true)
+        if options.dimScreen {
+            // Darken everything outside the recorded area (not included in the video).
+            let dim = ScrollDimWindow(screen: region.screen, hole: globalRect)
+            dim.orderFrontRegardless()
+            dimWindow = dim
+        }
         showControls(for: recorder)
     }
 
@@ -314,6 +328,8 @@ final class RecordingCoordinator {
         tick = nil
         controlBar?.orderOut(nil)
         controlBar = nil
+        dimWindow?.orderOut(nil)
+        dimWindow = nil
         clicks?.stopMonitoring()
         clicks = nil
         keys?.stopMonitoring()
@@ -358,7 +374,10 @@ final class RecordingCoordinator {
         hud.orderFrontRegardless()
         defer { hud.orderOut(nil) }
         do {
-            return try await GIFExporter.convert(url) { fraction in
+            let options = RecordingOptions.load()
+            return try await GIFExporter.convert(url, fps: Double(options.gifFPS),
+                                                 maxWidth: options.gifMaxWidth > 0 ? CGFloat(options.gifMaxWidth) : nil,
+                                                 optimize: options.gifOptimize, quality: options.gifQuality) { fraction in
                 DispatchQueue.main.async { MainActor.assumeIsolated { hud.update(fraction) } }
             }
         } catch {

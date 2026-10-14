@@ -18,6 +18,32 @@ struct RecordingOptions {
     var cameraMirrored = true
     var cameraDeviceID: String? // nil = system default
     var microphoneDeviceID: String?
+    var dimScreen = false
+    var rememberSelection = false
+    var clickColor = 0           // index into clickColors
+    var clickSize = 1            // 0 small, 1 medium, 2 large
+    var clickFilled = true
+    var keystrokesAtTop = false
+    var keystrokeSize = 1        // 0 small, 1 medium, 2 large
+    var keystrokesLight = false
+    var keystrokesCommandOnly = false
+    var maxResolution = 0        // index into maxHeights: 0 = original
+    var audioMono = false
+    var gifFPS = 15
+    var gifMaxWidth = 800        // 0 = original size
+    var gifOptimize = true
+    var gifQuality = 0.75        // 0 (smallest file) … 1 (best colours)
+
+    static let maxHeights: [(title: String, height: Int?)] = [
+        ("Original", nil), ("4K (2160p)", 2160), ("1440p", 1440), ("1080p", 1080), ("720p", 720)
+    ]
+
+    static let clickColors: [(name: String, color: NSColor)] = [
+        ("Yellow", .systemYellow), ("Red", .systemRed), ("Blue", .systemBlue), ("Green", .systemGreen), ("White", .white)
+    ]
+    var clickNSColor: NSColor { Self.clickColors[min(max(clickColor, 0), Self.clickColors.count - 1)].color }
+    var clickDiameter: CGFloat { [30, 44, 64][min(max(clickSize, 0), 2)] }
+    var keystrokeFontSize: CGFloat { [18, 26, 36][min(max(keystrokeSize, 0), 2)] }
 
     var cameraDiameter: CGFloat { [120, 180, 260][min(max(cameraSize, 0), 2)] }
 
@@ -41,6 +67,21 @@ struct RecordingOptions {
         o.cameraMirrored = d["cameraMirrored"] as? Bool ?? o.cameraMirrored
         o.cameraDeviceID = d["cameraDeviceID"] as? String
         o.microphoneDeviceID = d["microphoneDeviceID"] as? String
+        o.dimScreen = d["dimScreen"] as? Bool ?? o.dimScreen
+        o.rememberSelection = d["rememberSelection"] as? Bool ?? o.rememberSelection
+        o.clickColor = d["clickColor"] as? Int ?? o.clickColor
+        o.clickSize = d["clickSize"] as? Int ?? o.clickSize
+        o.clickFilled = d["clickFilled"] as? Bool ?? o.clickFilled
+        o.keystrokesAtTop = d["keystrokesAtTop"] as? Bool ?? o.keystrokesAtTop
+        o.keystrokeSize = d["keystrokeSize"] as? Int ?? o.keystrokeSize
+        o.keystrokesLight = d["keystrokesLight"] as? Bool ?? o.keystrokesLight
+        o.keystrokesCommandOnly = d["keystrokesCommandOnly"] as? Bool ?? o.keystrokesCommandOnly
+        o.maxResolution = d["maxResolution"] as? Int ?? o.maxResolution
+        o.audioMono = d["audioMono"] as? Bool ?? o.audioMono
+        o.gifFPS = d["gifFPS"] as? Int ?? o.gifFPS
+        o.gifMaxWidth = d["gifMaxWidth"] as? Int ?? o.gifMaxWidth
+        o.gifOptimize = d["gifOptimize"] as? Bool ?? o.gifOptimize
+        o.gifQuality = d["gifQuality"] as? Double ?? o.gifQuality
         return o
     }
 
@@ -50,7 +91,13 @@ struct RecordingOptions {
             "highlightClicks": highlightClicks, "showKeystrokes": showKeystrokes,
             "showCursor": showCursor, "fps": fps, "countdown": countdown, "scaleTo1x": scaleTo1x,
             "hideDesktopIcons": hideDesktopIcons, "cameraSize": cameraSize,
-            "cameraRounded": cameraRounded, "cameraMirrored": cameraMirrored
+            "cameraRounded": cameraRounded, "cameraMirrored": cameraMirrored,
+            "dimScreen": dimScreen, "rememberSelection": rememberSelection, "clickColor": clickColor,
+            "clickSize": clickSize, "clickFilled": clickFilled, "keystrokesAtTop": keystrokesAtTop,
+            "keystrokeSize": keystrokeSize, "keystrokesLight": keystrokesLight,
+            "keystrokesCommandOnly": keystrokesCommandOnly, "maxResolution": maxResolution,
+            "audioMono": audioMono, "gifFPS": gifFPS, "gifMaxWidth": gifMaxWidth,
+            "gifOptimize": gifOptimize, "gifQuality": gifQuality
         ]
         if let cameraDeviceID { d["cameraDeviceID"] = cameraDeviceID }
         if let microphoneDeviceID { d["microphoneDeviceID"] = microphoneDeviceID }
@@ -257,66 +304,29 @@ final class RecordingSetupPanel: NSPanel, NSTextFieldDelegate {
         setFrameOrigin(origin)
     }
 
+    private var settingsPopover: NSPopover?
+
+    /// The sliders button: grouped recording settings with switches.
     private func showSettingsMenu() {
-        let menu = NSMenu()
-        menu.addItem(toggleItem("Show Cursor", \.showCursor))
-        menu.addItem(toggleItem("Hide Desktop Icons", \.hideDesktopIcons))
-        menu.addItem(toggleItem("Countdown (3s)", \.countdown))
-        menu.addItem(toggleItem("Scale Retina to 1x", \.scaleTo1x))
-        menu.addItem(.separator())
-        for fps in [60, 30] {
-            menu.addItem(choiceItem("\(fps) FPS", selected: options.fps == fps) { $0.fps = fps })
-        }
-        menu.addItem(.separator())
-
-        let mics = NSMenu()
-        mics.addItem(choiceItem("System Default", selected: options.microphoneDeviceID == nil) { $0.microphoneDeviceID = nil })
-        for device in Devices.microphones() {
-            mics.addItem(choiceItem(device.localizedName, selected: options.microphoneDeviceID == device.uniqueID) {
-                $0.microphoneDeviceID = device.uniqueID
-            })
-        }
-        menu.addItem(submenu("Microphone", mics))
-
-        let cams = NSMenu()
-        cams.addItem(choiceItem("System Default", selected: options.cameraDeviceID == nil) { $0.cameraDeviceID = nil })
-        for device in Devices.cameras() {
-            cams.addItem(choiceItem(device.localizedName, selected: options.cameraDeviceID == device.uniqueID) {
-                $0.cameraDeviceID = device.uniqueID
-            })
-        }
-        cams.addItem(.separator())
-        for (index, name) in ["Small", "Medium", "Large"].enumerated() {
-            cams.addItem(choiceItem(name, selected: options.cameraSize == index) { $0.cameraSize = index })
-        }
-        cams.addItem(.separator())
-        cams.addItem(choiceItem("Circle", selected: !options.cameraRounded) { $0.cameraRounded = false })
-        cams.addItem(choiceItem("Rounded Square", selected: options.cameraRounded) { $0.cameraRounded = true })
-        cams.addItem(.separator())
-        cams.addItem(toggleItem("Mirror Camera", \.cameraMirrored))
-        menu.addItem(submenu("Camera", cams))
-
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: settingsButton.bounds.maxY + 4), in: settingsButton)
-    }
-
-    private func toggleItem(_ title: String, _ path: WritableKeyPath<RecordingOptions, Bool>) -> NSMenuItem {
-        choiceItem(title, selected: options[keyPath: path]) { $0[keyPath: path].toggle() }
-    }
-
-    private func choiceItem(_ title: String, selected: Bool, change: @escaping (inout RecordingOptions) -> Void) -> NSMenuItem {
-        let item = ClosureMenuItem(title: title) { [weak self] in
+        let controller = RecordingSettingsViewController(options: options) { [weak self] new in
             guard let self else { return }
-            change(&self.options)
-            self.onOptionsChange?(self.options)
+            self.options = new
+            self.syncToggles()
+            self.onOptionsChange?(new)
         }
-        item.state = selected ? .on : .off
-        return item
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .darkAqua)
+        popover.contentViewController = controller
+        popover.show(relativeTo: settingsButton.bounds, of: settingsButton, preferredEdge: .maxY)
+        settingsPopover = popover
     }
 
-    private func submenu(_ title: String, _ menu: NSMenu) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.submenu = menu
-        return item
+    /// Keeps the toggle row in step with changes made in the settings popover.
+    private func syncToggles() {
+        let paths: [WritableKeyPath<RecordingOptions, Bool>] = [\.microphone, \.systemAudio, \.camera,
+                                                                \.highlightClicks, \.showKeystrokes]
+        for (button, path) in zip(toggles, paths) { button.isOn = options[keyPath: path] }
     }
 
     // MARK: Size fields

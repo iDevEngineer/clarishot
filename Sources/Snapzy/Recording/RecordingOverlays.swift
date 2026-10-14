@@ -357,8 +357,10 @@ final class DesktopIconHider {
 @MainActor
 final class ClickHighlightWindow: NSWindow {
     private var monitors: [Any] = []
+    private let options: RecordingOptions
 
-    init(rect: CGRect) {
+    init(rect: CGRect, options: RecordingOptions) {
+        self.options = options
         super.init(contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .screenSaver
@@ -392,12 +394,13 @@ final class ClickHighlightWindow: NSWindow {
     private func ripple(at global: CGPoint) {
         guard frame.contains(global), let layer = contentView?.layer else { return }
         let point = CGPoint(x: global.x - frame.minX, y: global.y - frame.minY)
-        let size: CGFloat = 44
+        let size = options.clickDiameter
         let ring = CAShapeLayer()
         ring.frame = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
         ring.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: size, height: size), transform: nil)
-        ring.fillColor = NSColor.systemYellow.withAlphaComponent(0.35).cgColor
-        ring.strokeColor = NSColor.systemYellow.cgColor
+        let color = options.clickNSColor
+        ring.fillColor = options.clickFilled ? color.withAlphaComponent(0.35).cgColor : NSColor.clear.cgColor
+        ring.strokeColor = color.cgColor
         ring.lineWidth = 3
         layer.addSublayer(ring)
 
@@ -434,9 +437,13 @@ final class KeystrokeWindow: NSWindow {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    init(rect: CGRect) {
-        let height: CGFloat = 70
-        let frame = CGRect(x: rect.minX, y: rect.minY + 24, width: rect.width, height: height)
+    private let options: RecordingOptions
+
+    init(rect: CGRect, options: RecordingOptions) {
+        self.options = options
+        let height = options.keystrokeFontSize * 2.6
+        let y = options.keystrokesAtTop ? rect.maxY - 24 - height : rect.minY + 24
+        let frame = CGRect(x: rect.minX, y: y, width: rect.width, height: height)
         super.init(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .screenSaver
@@ -448,11 +455,12 @@ final class KeystrokeWindow: NSWindow {
 
         let root = NSView(frame: CGRect(origin: .zero, size: frame.size))
         pill.wantsLayer = true
-        pill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
+        pill.layer?.backgroundColor = (options.keystrokesLight ? NSColor.white.withAlphaComponent(0.92)
+                                                               : NSColor.black.withAlphaComponent(0.75)).cgColor
         pill.layer?.cornerRadius = 12
         pill.alphaValue = 0
-        label.font = .systemFont(ofSize: 26, weight: .semibold)
-        label.textColor = .white
+        label.font = .systemFont(ofSize: options.keystrokeFontSize, weight: .semibold)
+        label.textColor = options.keystrokesLight ? .black : .white
         pill.addSubview(label)
         root.addSubview(pill)
         contentView = root
@@ -471,6 +479,8 @@ final class KeystrokeWindow: NSWindow {
     }
 
     private func show(_ event: NSEvent) {
+        if options.keystrokesCommandOnly,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty { return }
         var text = ""
         let flags = event.modifierFlags
         if flags.contains(.control) { text += "⌃" }
@@ -517,13 +527,16 @@ final class KeystrokeWindow: NSWindow {
 
 enum GIFExporter {
     /// Turns a recording into a looping GIF next to it (15 fps, at most 960 px wide).
-    static func convert(_ url: URL, fps: Double = 15, maxWidth: CGFloat = 960,
-                        progress: ((Double) -> Void)? = nil) async throws -> URL {
+    /// - maxWidth: nil keeps the recording's size.
+    /// - optimize: frames that look the same as the one before are merged (longer delay).
+    /// - quality: 0…1; lower uses fewer colours for smaller files.
+    static func convert(_ url: URL, fps: Double = 15, maxWidth: CGFloat? = 800, optimize: Bool = true,
+                        quality: Double = 0.75, progress: ((Double) -> Void)? = nil) async throws -> URL {
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration).seconds
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: maxWidth, height: maxWidth * 4)
+        if let maxWidth { generator.maximumSize = CGSize(width: maxWidth, height: maxWidth * 4) }
         let tolerance = CMTime(seconds: 0.5 / fps, preferredTimescale: 600)
         generator.requestedTimeToleranceBefore = tolerance
         generator.requestedTimeToleranceAfter = tolerance
@@ -535,15 +548,58 @@ enum GIFExporter {
         CGImageDestinationSetProperties(destination, [
             kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
         ] as CFDictionary)
-        let frameProperties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 1 / fps]] as CFDictionary
 
+        let context = CIContext()
+        let levels = 4 + quality * 28 // colour steps per channel; ignored at full quality
+        func reduceColours(_ image: CGImage) -> CGImage {
+            guard quality < 0.98, let filter = CIFilter(name: "CIColorPosterize") else { return image }
+            let input = CIImage(cgImage: image)
+            filter.setValue(input, forKey: kCIInputImageKey)
+            filter.setValue(levels, forKey: "inputLevels")
+            guard let result = filter.outputImage, let cg = context.createCGImage(result, from: input.extent) else { return image }
+            return cg
+        }
+        func add(_ image: CGImage, delay: Double) {
+            let properties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay]] as CFDictionary
+            CGImageDestinationAddImage(destination, image, properties)
+        }
+
+        var pending: (image: CGImage, signature: [UInt8], delay: Double)?
         for i in 0..<count {
             let time = CMTime(seconds: Double(i) / fps, preferredTimescale: 600)
-            let (image, _) = try await generator.image(at: time)
-            CGImageDestinationAddImage(destination, image, frameProperties)
+            let (raw, _) = try await generator.image(at: time)
+            let signature = Self.signature(of: raw)
+            if optimize, var last = pending, Self.same(last.signature, signature) {
+                last.delay += 1 / fps
+                pending = last
+            } else {
+                if let last = pending { add(last.image, delay: last.delay) }
+                pending = (reduceColours(raw), signature, 1 / fps)
+            }
             progress?(Double(i + 1) / Double(count))
         }
+        if let last = pending { add(last.image, delay: last.delay) }
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         return output
+    }
+
+    /// A tiny 32×32 copy of a frame, for spotting frames that didn't change.
+    private static func signature(of image: CGImage) -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: 32 * 32 * 4)
+        pixels.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 128,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            ctx.interpolationQuality = .low
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        return pixels
+    }
+
+    private static func same(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        guard a.count == b.count else { return false }
+        var total = 0
+        for i in 0..<a.count { total += abs(Int(a[i]) - Int(b[i])) }
+        return Double(total) / Double(a.count) < 0.6
     }
 }

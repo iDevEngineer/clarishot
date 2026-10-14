@@ -78,7 +78,10 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
         let keep = content.windows.filter { includedIDs.contains($0.windowID) }
         let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: keep)
 
-        let scale = options.scaleTo1x ? 1 : screen.backingScaleFactor
+        var scale = options.scaleTo1x ? 1 : screen.backingScaleFactor
+        // Max resolution: shrink so the video is no taller than the chosen limit.
+        let limit = RecordingOptions.maxHeights[min(max(options.maxResolution, 0), RecordingOptions.maxHeights.count - 1)]
+        if let maxHeight = limit.height { scale = min(scale, CGFloat(maxHeight) / rect.height) }
         let config = SCStreamConfiguration()
         // ScreenCaptureKit wants a top-left origin within the display.
         config.sourceRect = CGRect(x: rect.minX, y: screen.frame.height - rect.maxY, width: rect.width, height: rect.height)
@@ -88,6 +91,7 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
         config.showsCursor = options.showCursor
         config.queueDepth = 6
         config.capturesAudio = options.systemAudio
+        config.channelCount = options.audioMono ? 1 : 2
         config.excludesCurrentProcessAudio = true
         config.captureMicrophone = options.microphone
         if let mic = options.microphoneDeviceID { config.microphoneCaptureDeviceID = mic }
