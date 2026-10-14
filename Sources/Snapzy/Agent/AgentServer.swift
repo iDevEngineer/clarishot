@@ -74,7 +74,7 @@ final class AgentServer {
 
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
-        while !data.contains(UInt8(ascii: "\n")), data.count < 1_000_000 {
+        while data.last != UInt8(ascii: "\n"), data.count < 80_000_000 { // room for an image sent as base64
             let count = read(client, &buffer, buffer.count)
             if count <= 0 { break }
             data.append(contentsOf: buffer[0..<count])
