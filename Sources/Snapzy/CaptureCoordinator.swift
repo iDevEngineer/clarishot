@@ -59,6 +59,10 @@ final class CaptureCoordinator {
                         RecordingCoordinator.shared.showSetup(screen: shot.screen, rect: rect)
                     case .timer:
                         self.timedCapture(screen: shot.screen, rect: rect)
+                    case .fullscreen:
+                        self.captureFullscreen()
+                    case .window:
+                        self.captureWindow()
                     }
                 }
             } catch {

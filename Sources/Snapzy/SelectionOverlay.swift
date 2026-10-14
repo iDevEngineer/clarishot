@@ -14,7 +14,7 @@ enum SelectionMode {
 
 /// What to do with an All-In-One selection.
 enum AllInOneAction {
-    case screenshot, text, scrolling, record, timer
+    case screenshot, fullscreen, window, scrolling, timer, text, record
 }
 
 enum SelectionResult {
@@ -385,12 +385,21 @@ final class OverlayView: NSView {
     private func makeActionBar() -> AllInOneBar {
         let bar = AllInOneBar()
         bar.onAction = { [weak self] action in self?.perform(action) }
-        bar.onCancel = { [weak self] in self?.onFinish?(nil) }
-        bar.onToggleLock = { [weak self] in
-            guard let self, let rect = self.selection else { return }
-            self.aspectLocked.toggle()
-            self.aspectRatio = rect.width / max(rect.height, 1)
+        bar.onAspect = { [weak self] ratio in
+            guard let self, var rect = self.selection else { return }
+            if let ratio {
+                // Reshape around the same top-left corner, keeping the width.
+                let height = (rect.width / ratio).rounded()
+                rect = CGRect(x: rect.minX, y: rect.maxY - height, width: rect.width, height: height)
+                rect.origin.y = max(rect.minY, 0)
+                self.selection = rect
+                self.aspectRatio = ratio
+                self.aspectLocked = true
+            } else {
+                self.aspectLocked = false
+            }
             self.showActionBar()
+            self.needsDisplay = true
         }
         bar.onSize = { [weak self] size in
             guard let self, var rect = self.selection else { return }
@@ -688,50 +697,46 @@ final class OverlayView: NSView {
     }
 }
 
-/// Dark bar under an All-In-One selection: capture actions, size and aspect lock.
+/// The All-In-One bar: capture modes on the left (same icons as the menu), and size
+/// plus an aspect-ratio menu on the right, as two dark panels.
 @MainActor
-final class AllInOneBar: NSVisualEffectView, NSTextFieldDelegate {
+final class AllInOneBar: NSView, NSTextFieldDelegate {
     var onAction: ((AllInOneAction) -> Void)?
-    var onCancel: (() -> Void)?
-    var onToggleLock: (() -> Void)?
+    var onAspect: ((CGFloat?) -> Void)?
     var onSize: ((CGSize) -> Void)?
 
     private let widthField = SizeField()
     private let heightField = SizeField()
-    private let lockButton = PanelIconButton(symbol: "lock.open", onSymbol: "lock.fill", tip: "Lock aspect ratio")
+    private var locked = false
+    private var currentRatio: CGFloat?
 
     init() {
         super.init(frame: .zero)
-        material = .hudWindow
-        state = .active
-        blendingMode = .withinWindow
         appearance = NSAppearance(named: .darkAqua)
-        wantsLayer = true
-        layer?.cornerRadius = 12
-        layer?.masksToBounds = true
 
-        let actions: [(String, String, AllInOneAction)] = [
-            ("camera.viewfinder", "Capture screenshot (↩)", .screenshot),
-            ("text.viewfinder", "Capture text (OCR)", .text),
-            ("arrow.down.doc", "Scrolling capture", .scrolling),
-            ("record.circle", "Record screen", .record),
-            ("timer", "Self-timer", .timer)
+        // Same icons as the menu-bar items they stand for.
+        let modes: [(String, String, AllInOneAction)] = [
+            ("Area", "viewfinder", .screenshot), ("Fullscreen", "display", .fullscreen),
+            ("Window", "macwindow", .window), ("Scrolling", "arrow.down", .scrolling), ("Timer", "timer", .timer)
         ]
-        let buttons: [NSView] = actions.map { symbol, tip, action in
-            let button = PanelIconButton(symbol: symbol, tip: tip)
-            button.onClick = { [weak self] in self?.onAction?(action) }
-            return button
+        var left: [NSView] = modes.map { title, symbol, action in
+            ModeButton(title: title, symbol: symbol) { [weak self] in self?.onAction?(action) }
         }
-        for f in [widthField, heightField] { f.delegate = self }
-        let times = NSTextField(labelWithString: "×")
-        times.textColor = .secondaryLabelColor
-        lockButton.onClick = { [weak self] in self?.onToggleLock?() }
-        let cancel = PanelIconButton(symbol: "xmark", tip: "Cancel (Esc)")
-        cancel.onClick = { [weak self] in self?.onCancel?() }
+        left.append(Self.divider())
+        left.append(ModeButton(title: "OCR", symbol: "textformat") { [weak self] in self?.onAction?(.text) })
+        left.append(Self.divider())
+        left.append(ModeButton(title: "Recording", symbol: "video") { [weak self] in self?.onAction?(.record) })
+        let modesPanel = Self.panel(left)
 
-        let stack = NSStackView(views: buttons + [divider(), widthField, times, heightField, lockButton, divider(), cancel])
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 5, left: 6, bottom: 5, right: 6)
+        for f in [widthField, heightField] { f.delegate = self }
+        let times = NSTextField(labelWithString: "x")
+        times.textColor = .secondaryLabelColor
+        let crop = AspectButton { [weak self] view in self?.showAspectMenu(from: view) }
+        let sizePanel = Self.panel([widthField, times, heightField, Self.divider(), crop])
+
+        let stack = NSStackView(views: [modesPanel, sizePanel])
+        stack.spacing = 12
+        stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -747,20 +752,154 @@ final class AllInOneBar: NSVisualEffectView, NSTextFieldDelegate {
     func update(size: CGSize, locked: Bool) {
         widthField.integerValue = Int(size.width)
         heightField.integerValue = Int(size.height)
-        lockButton.isOn = locked
+        self.locked = locked
+        if !locked { currentRatio = nil }
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
         onSize?(CGSize(width: max(CGFloat(widthField.integerValue), 4), height: max(CGFloat(heightField.integerValue), 4)))
     }
 
-    private func divider() -> NSView {
+    private func showAspectMenu(from view: NSView) {
+        let menu = NSMenu()
+        let ratios: [(String, CGFloat?)] = [("Freeform", nil), ("1:1 Square", 1), ("4:3", 4.0 / 3), ("3:2", 1.5),
+                                           ("16:9", 16.0 / 9), ("9:16 Portrait", 9.0 / 16)]
+        for (title, ratio) in ratios {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                self?.currentRatio = ratio
+                self?.onAspect?(ratio)
+            }
+            item.state = (ratio == nil ? !locked : (locked && currentRatio == ratio)) ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: view.bounds.maxY + 4), in: view)
+    }
+
+    /// A dark rounded panel holding a row of views.
+    private static func panel(_ views: [NSView]) -> NSView {
+        let background = NSVisualEffectView()
+        background.material = .hudWindow
+        background.state = .active
+        background.blendingMode = .withinWindow
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 16
+        background.layer?.masksToBounds = true
+        background.layer?.borderWidth = 1
+        background.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        let stack = NSStackView(views: views)
+        stack.spacing = 4
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: background.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor)
+        ])
+        return background
+    }
+
+    private static func divider() -> NSView {
         let box = NSBox()
         box.boxType = .separator
         box.translatesAutoresizingMaskIntoConstraints = false
         box.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        box.heightAnchor.constraint(equalToConstant: 40).isActive = true
         return box
+    }
+}
+
+/// Icon above a label, highlighted on hover (e.g. "Area", "Fullscreen").
+@MainActor
+private final class ModeButton: NSView {
+    private let action: () -> Void
+
+    init(title: String, symbol: String, action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        toolTip = title
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: title) ?? NSImage())
+        icon.symbolConfiguration = .init(pointSize: 18, weight: .regular)
+        icon.contentTintColor = .white
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = NSColor.white.withAlphaComponent(0.75)
+        let stack = NSStackView(views: [icon, label])
+        stack.orientation = .vertical
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 76),
+            heightAnchor.constraint(equalToConstant: 62),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8)
+        ])
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor }
+    override func mouseExited(with event: NSEvent) { layer?.backgroundColor = nil }
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+    }
+}
+
+/// Crop icon with a ▾, opening the aspect-ratio menu.
+@MainActor
+private final class AspectButton: NSView {
+    private let action: (NSView) -> Void
+
+    init(action: @escaping (NSView) -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        toolTip = "Aspect ratio"
+        let crop = NSImageView(image: NSImage(systemSymbolName: "crop", accessibilityDescription: "Aspect ratio") ?? NSImage())
+        crop.symbolConfiguration = .init(pointSize: 17, weight: .regular)
+        crop.contentTintColor = .white
+        let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil) ?? NSImage())
+        chevron.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
+        chevron.contentTintColor = NSColor.white.withAlphaComponent(0.7)
+        let stack = NSStackView(views: [crop, chevron])
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 40),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action(self) }
     }
 }
 
