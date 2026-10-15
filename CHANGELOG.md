@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-15
+
 ### Changed
 - Advanced: clearer names and order for the AI app rows (Claude Code covers the Terminal and the Code tab; Claude app (Chat) covers regular conversations).
 
@@ -94,7 +96,8 @@ First public release.
 - Preferences with themes, optional Liquid Glass, and every shortcut configurable.
 - MCP server and `clarishot` command-line tool for AI tools and scripts; `clarishot://` links.
 
-[Unreleased]: https://github.com/iDevEngineer/clarishot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/iDevEngineer/clarishot/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/iDevEngineer/clarishot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/iDevEngineer/clarishot/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/iDevEngineer/clarishot/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/iDevEngineer/clarishot/compare/v0.2.0...v0.2.1
