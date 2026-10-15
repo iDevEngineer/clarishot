@@ -162,8 +162,10 @@ enum AgentElements {
               AXValueGetValue(sizeRef as! AXValue, .cgSize, &size), // swiftlint:disable:this force_cast
               size.width >= 8, size.height >= 8 else { return nil }
         let role = (string(kAXRoleDescriptionAttribute) ?? string(kAXRoleAttribute) ?? "element")
-        let label = string(kAXTitleAttribute) ?? string(kAXDescriptionAttribute) ?? string(kAXHelpAttribute)
+        var label = string(kAXTitleAttribute) ?? string(kAXDescriptionAttribute) ?? string(kAXHelpAttribute)
             ?? string(kAXIdentifierAttribute) ?? ""
+        // Masked here, before any search, so a query can't be used to guess a hidden value.
+        if Settings.shared.agentHideSensitive { label = SensitiveDataFinder.mask(label).0 }
         guard !label.isEmpty || ["toolbar", "sidebar", "scroll area", "table", "outline", "web area", "list"].contains(role.lowercased()) else {
             return nil
         }

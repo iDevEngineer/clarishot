@@ -149,9 +149,9 @@ enum AgentAPI {
 
     private static func elements(_ p: [String: Any]) throws -> [[String: Any]] {
         guard let app = p["app"] as? String else { throw AgentError("elements needs app") }
-        let hide = Settings.shared.agentHideSensitive
+        // Labels arrive already masked (see AgentElements.describe).
         return try AgentElements.list(app: app, query: p["query"] as? String, limit: p["limit"] as? Int ?? 150).map {
-            ["role": $0.role, "label": hide ? SensitiveDataFinder.mask($0.label).0 : $0.label,
+            ["role": $0.role, "label": $0.label,
              "frame": ["x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height]]
         }
     }
