@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - Licence changed from MIT to GPL-3.0 (earlier releases stay MIT).
+- About: the website link now goes to scottmackey.uk.
 
 ## [0.1.1] - 2026-10-15
 
