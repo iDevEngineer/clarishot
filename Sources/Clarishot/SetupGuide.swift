@@ -191,8 +191,24 @@ final class SetupGuideController: NSObject, NSWindowDelegate {
             row.translatesAutoresizingMaskIntoConstraints = false
             row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
         }
-        let login = NSButton(checkboxWithTitle: "Open Clarishot when I log in", target: self, action: #selector(toggleLogin(_:)))
-        login.state = Settings.shared.launchAtLogin ? .on : .off
+        // Same columns as the rows above: the box sits in the icon column, the text with the titles.
+        let box = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggleLogin(_:)))
+        box.state = Settings.shared.launchAtLogin ? .on : .off
+        loginBox = box
+        let boxColumn = NSView()
+        boxColumn.translatesAutoresizingMaskIntoConstraints = false
+        box.translatesAutoresizingMaskIntoConstraints = false
+        boxColumn.addSubview(box)
+        NSLayoutConstraint.activate([
+            boxColumn.widthAnchor.constraint(equalToConstant: 24),
+            box.centerXAnchor.constraint(equalTo: boxColumn.centerXAnchor),
+            box.centerYAnchor.constraint(equalTo: boxColumn.centerYAnchor),
+            boxColumn.heightAnchor.constraint(equalTo: box.heightAnchor)
+        ])
+        let loginText = label("Open Clarishot when I log in", size: 13)
+        loginText.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleLoginText)))
+        let login = NSStackView(views: [boxColumn, loginText])
+        login.spacing = 10
         let stack = NSStackView(views: [title, subtitle, list, login])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -263,6 +279,14 @@ final class SetupGuideController: NSObject, NSWindowDelegate {
         if let following = Page(rawValue: page.rawValue + 1) { page = following; return }
         Settings.shared.setupGuideDone = true
         window.close()
+    }
+
+    private weak var loginBox: NSButton?
+
+    @objc private func toggleLoginText() {
+        guard let box = loginBox else { return }
+        box.state = box.state == .on ? .off : .on
+        toggleLogin(box)
     }
 
     @objc private func toggleLogin(_ sender: NSButton) {
