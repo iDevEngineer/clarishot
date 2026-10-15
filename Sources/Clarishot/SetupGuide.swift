@@ -388,7 +388,7 @@ private final class PermissionRow: NSView {
         let text = NSStackView(views: [title, detail, note])
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 2
+        text.spacing = 3
         button.bezelStyle = .rounded
         button.target = self
         button.action = #selector(grant)
@@ -397,15 +397,16 @@ private final class PermissionRow: NSView {
         tick.contentTintColor = .systemGreen
         let row = NSStackView(views: [icon, text, NSView(), tick, button])
         row.spacing = 10
-        row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
         row.translatesAutoresizingMaskIntoConstraints = false
         text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor),
             row.trailingAnchor.constraint(equalTo: trailingAnchor),
-            row.topAnchor.constraint(equalTo: topAnchor),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor)
+            // Room above and below the text, set here because stack-view insets alone get squeezed.
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14)
         ])
         refresh()
     }
