@@ -186,7 +186,7 @@ final class SetupGuideController: NSObject, NSWindowDelegate {
         }
         let list = NSStackView(views: rows)
         list.orientation = .vertical
-        list.spacing = 10
+        list.spacing = 18
         for row in rows {
             row.translatesAutoresizingMaskIntoConstraints = false
             row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
