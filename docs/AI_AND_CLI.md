@@ -31,8 +31,9 @@ The command-line tool ships inside the app at:
 `clarishot mcp` runs an MCP server over standard input/output.
 
 **The quick way:** Preferences → Advanced → AI Tools & Command Line lists Claude Code, ChatGPT Codex,
-Claude Desktop and Cursor. Click **Connect** next to any that are installed; a green tick shows the ones
-already connected. For desktop apps Clarishot adds itself to the app's MCP config and keeps a
+the Claude app (Chat) and Cursor. Click **Connect** next to any that are installed; a green tick shows the ones
+already connected. Claude Code (the Terminal and the Code tab in the Claude app) and the Claude app's
+Chat keep separate tool lists, so each is connected on its own. For desktop apps Clarishot adds itself to the app's MCP config and keeps a
 `.clarishot-backup` copy of the old file. The commands below do the same by hand.
 
 ### Claude Code
