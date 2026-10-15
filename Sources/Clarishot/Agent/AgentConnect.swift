@@ -6,7 +6,7 @@ import AppKit
 @MainActor
 enum AgentConnect {
     enum Target: CaseIterable {
-        case claudeCode, codex, claudeDesktop, cursor
+        case claudeCode, claudeDesktop, codex, cursor
 
         /// What it covers, shown under the name.
         var detail: String {
