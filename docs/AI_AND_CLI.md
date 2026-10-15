@@ -30,6 +30,11 @@ The command-line tool ships inside the app at:
 [MCP](https://modelcontextprotocol.io) is the standard way AI apps connect to local tools.
 `clarishot mcp` runs an MCP server over standard input/output.
 
+**The quick way:** Preferences → Advanced → AI Tools & Command Line lists Claude Code, ChatGPT Codex,
+Claude Desktop and Cursor. Click **Connect** next to any that are installed; a green tick shows the ones
+already connected. For desktop apps Clarishot adds itself to the app's MCP config and keeps a
+`.clarishot-backup` copy of the old file. The commands below do the same by hand.
+
 ### Claude Code
 
 ```bash
@@ -73,6 +78,8 @@ Add this to the app's MCP configuration (**Copy JSON** in Preferences copies it)
 | `read_text` | Text and QR codes from an image file, a screen area, or an area the user selects |
 | `recent_captures` | Recent screenshots and recordings from Capture History |
 | `open_capture` | Opens an image in Annotate, as a pin, or as a preview card |
+| `annotate_image` | Draws arrows, boxes, labels, numbered steps, highlights and blur on an image and returns it (optionally opens it in the editor, still editable) |
+| `list_elements` | The labelled parts of an app's window (buttons, fields, sidebars) with their frames |
 | `start_recording` / `stop_recording` | Starts the recording flow; stopping returns the saved file |
 
 `take_screenshot` modes:
@@ -83,8 +90,27 @@ Add this to the app's MCP configuration (**Copy JSON** in Preferences copies it)
 | `area` | `x`, `y`, `width`, `height` | Points, top-left origin, like `list_windows` |
 | `window` | `window_id` or `app` | `app` matches the name or bundle id |
 | `interactive` | | The user drags an area |
+| `element` | `app`, `query`, optional `padding` | One part of an app by its label or role, e.g. app `Safari`, query `Downloads`. Needs Accessibility |
 | `smart` | | The user clicks one UI element |
 | `cutout` | optional area | The subject of an area with its background removed |
+
+**Private text is covered.** With **Hide sensitive info from AI tools** on (the default), emails, phone
+numbers, card numbers, API keys and passwords are covered with black boxes before the AI tool gets a
+screenshot or its text; the result's `hiddenSensitiveItems` says how many. Pass `redact: false` (or
+`--no-redact`) for one capture, or turn the setting off.
+
+`annotate_image` shapes use the image's points (top-left origin; a screenshot's `pointWidth` and
+`pointHeight`):
+
+```json
+[
+  {"type": "arrow", "from_x": 40, "from_y": 40, "to_x": 180, "to_y": 120},
+  {"type": "rectangle", "x": 200, "y": 90, "width": 160, "height": 44, "color": "blue"},
+  {"type": "text", "x": 200, "y": 150, "text": "Click Save", "font_size": 22},
+  {"type": "counter", "x": 60, "y": 200},
+  {"type": "blur", "x": 400, "y": 20, "width": 200, "height": 40}
+]
+```
 
 Set `show: true` to also show the capture in Clarishot (preview card and after-capture actions), and
 `include_image: false` to return only the path.
@@ -93,6 +119,8 @@ Example prompts:
 - *"List my open windows with Clarishot."*
 - *"Take a screenshot of the Safari window and summarise it."*
 - *"Read the text in the top-left 600 × 400 of my screen."*
+- *"Screenshot the Settings window and circle the Save button."*
+- *"Capture just the sidebar in Finder."*
 
 ## The `clarishot` command
 
@@ -179,5 +207,6 @@ server are thin wrappers around these calls; see `Sources/ClarishotCLI/main.swif
   reads it with its own permissions and sends the image. Clarishot never opens paths it's given, so it
   can't be used to read files the caller couldn't.
 - **Visible.** Every capture made this way shows a message and appears in Capture History.
+- **Private text hidden by default.** See *Private text is covered* above.
 
 While it's on, any program you run could ask for a screenshot. Turn it off when you don't need it.

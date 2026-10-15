@@ -85,12 +85,16 @@ clarishot: control Clarishot from the terminal or an AI tool.
       --area X,Y,W,H                  Points, top-left origin
       --window ID | --app NAME        One window
       --interactive                   Let you drag an area
+      --element APP:QUERY             One part of an app by name, e.g. Safari:Downloads
       --smart                         Let you click one element of an app
+      --no-redact                     Don't cover private text (see Preferences)
       --cutout                        Cut out the subject of an area (with --area, or drag)
       --show                          Also show it in Clarishot (preview, after-capture actions)
-  clarishot ocr [--path FILE | --area X,Y,W,H | --interactive]   Print the text it reads
+  clarishot ocr [--path FILE | --interactive | any screenshot option]   Print the text it reads
   clarishot history [--limit N] [--kind screenshot|recording|gif]
   clarishot open FILE [--pin | --preview]   Open an image in Annotate (or pin / preview it)
+  clarishot elements APP [QUERY]         List an app's labelled buttons, fields and panels
+  clarishot annotate FILE SHAPES.json [--open]   Draw shapes on an image; prints the new PNG path
   clarishot record start | stop          Start the recording flow / stop and print the file
   clarishot mcp                          Run as an MCP server over stdio (for AI tools)
 
@@ -115,6 +119,10 @@ func captureParams(_ args: [String]) throws -> [String: Any] {
     if let app = value(after: "--app", in: args) { p = ["mode": "window", "app": app] }
     if args.contains("--interactive") { p = ["mode": "interactive"] }
     if args.contains("--smart") { p = ["mode": "smart"] }
+    if let el = value(after: "--element", in: args), let colon = el.firstIndex(of: ":") {
+        p = ["mode": "element", "app": String(el[..<colon]), "query": String(el[el.index(after: colon)...])]
+    }
+    if args.contains("--no-redact") { p["redact"] = false }
     if args.contains("--cutout") { p["mode"] = "cutout" }
     if args.contains("--fullscreen") || p.isEmpty { p["mode"] = p["mode"] ?? "fullscreen" }
     if let display = value(after: "--display", in: args).flatMap(Int.init) { p["display"] = display }
@@ -145,8 +153,9 @@ func runCommand(_ args: [String]) throws {
     case "ocr":
         var p: [String: Any] = [:]
         if let path = value(after: "--path", in: args) { p = try imageParams(path) }
-        else if let area = value(after: "--area", in: args) { p = try areaParams(area); p["mode"] = "area" }
-        else { p["mode"] = "interactive" }
+        else if ["--area", "--window", "--app", "--element", "--fullscreen"].contains(where: args.contains) {
+            p = try captureParams(Array(args.dropFirst()))
+        } else { p["mode"] = "interactive" } // no target given: let the user drag an area
         show(try call("ocr", p)) { ($0 as? [String: Any])?["text"] as? String ?? "" }
     case "history":
         var p: [String: Any] = ["limit": Int(value(after: "--limit", in: args) ?? "") ?? 10]
@@ -161,6 +170,28 @@ func runCommand(_ args: [String]) throws {
         var p = try imageParams(file)
         p["action"] = action
         show(try call("open", p)) { _ in "Opened \(file)" }
+    case "elements":
+        let rest = args.dropFirst().filter { !$0.hasPrefix("--") }
+        guard let app = rest.first else { throw CLIError(message: "elements needs an app name") }
+        var p: [String: Any] = ["app": app]
+        if rest.count > 1 { p["query"] = rest.dropFirst().joined(separator: " ") }
+        show(try call("elements", p)) { result in
+            ((result as? [[String: Any]]) ?? []).map { e in
+                let f = e["frame"] as? [String: Any] ?? [:]
+                return "\(e["role"] ?? "")\t\(e["label"] ?? "")\t\(f["x"] ?? 0),\(f["y"] ?? 0),\(f["width"] ?? 0),\(f["height"] ?? 0)"
+            }.joined(separator: "\n")
+        }
+    case "annotate":
+        let rest = args.dropFirst().filter { !$0.hasPrefix("--") }
+        guard rest.count >= 2 else { throw CLIError(message: "annotate needs FILE and SHAPES.json") }
+        var p = try imageParams(rest[0])
+        guard let data = FileManager.default.contents(atPath: rest[1]),
+              let shapes = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw CLIError(message: "\(rest[1]) must be a JSON list of shapes")
+        }
+        p["shapes"] = shapes
+        if args.contains("--open") { p["open"] = true }
+        show(try call("annotate", p)) { ($0 as? [String: Any])?["path"] as? String ?? "" }
     case "record":
         switch args.dropFirst().first {
         case "start": show(try call("record_start")) { ($0 as? [String: Any])?["started"] as? String ?? "" }
@@ -185,8 +216,10 @@ final class MCPServer {
         tool("list_windows", "List visible app windows with id, app name, title and frame (points, top-left origin).",
              ["app": ["type": "string", "description": "Only windows whose app name or bundle id contains this"]]),
         tool("take_screenshot",
-             "Take a screenshot with Clarishot. Returns the saved PNG path and the image. mode: fullscreen (default), area (x, y, width, height in points, top-left origin), window (window_id from list_windows, or app name), interactive (the user drags an area), smart (the user clicks one UI element, e.g. a button or panel), or cutout (the subject of an area with its background removed; uses x/y/width/height if given, otherwise the user drags).",
-             ["mode": ["type": "string", "enum": ["fullscreen", "area", "window", "interactive", "smart", "cutout"]],
+             "Take a screenshot with Clarishot. Returns the saved PNG path and the image. mode: fullscreen (default), area (x, y, width, height in points, top-left origin), window (window_id from list_windows, or app name), element (one part of an app found by name: app plus query, e.g. app \"Safari\", query \"Downloads\"; see list_elements), interactive (the user drags an area), smart (the user clicks one UI element), or cutout (the subject of an area with its background removed). Private text (emails, keys, card numbers) is covered with black boxes unless the user turned that off; the result says how many.",
+             ["mode": ["type": "string", "enum": ["fullscreen", "area", "window", "element", "interactive", "smart", "cutout"]],
+              "query": ["type": "string", "description": "For mode element: the element's title, label or role"],
+              "padding": ["type": "number", "description": "For mode element: points of space around it (default 8)"],
               "display": ["type": "integer", "description": "Screen index for fullscreen"],
               "x": ["type": "number"], "y": ["type": "number"], "width": ["type": "number"], "height": ["type": "number"],
               "window_id": ["type": "integer"], "app": ["type": "string"],
@@ -201,6 +234,17 @@ final class MCPServer {
              ["limit": ["type": "integer"], "kind": ["type": "string", "enum": ["screenshot", "recording", "gif"]]]),
         tool("open_capture", "Open an image in Clarishot: annotate (editor), pin (floating on screen) or preview (Quick Access card).",
              ["path": ["type": "string"], "action": ["type": "string", "enum": ["annotate", "pin", "preview"]]], required: ["path"]),
+        tool("annotate_image",
+             "Draw on an image and return the result: arrows, boxes, labels, numbered steps, highlights and blur. Coordinates are image points with a top-left origin (a screenshot's pointWidth/pointHeight). Shape types: arrow and line (from_x, from_y, to_x, to_y), rectangle, filled_rectangle, ellipse, highlight, blur, pixelate, spotlight (x, y, width, height), text (x, y, text, font_size), counter (x, y, optional number). Optional color: red, orange, yellow, green, blue, purple, pink, black, white, gray or #RRGGBB.",
+             ["path": ["type": "string", "description": "Image file to draw on, e.g. a take_screenshot path"],
+              "shapes": ["type": "array", "items": ["type": "object"]],
+              "scale": ["type": "number", "description": "Pixels per point of the image (2 for Retina screenshots, the default)"],
+              "open": ["type": "boolean", "description": "Also open it in Clarishot's editor with the shapes still editable"]],
+             required: ["path", "shapes"]),
+        tool("list_elements",
+             "List the labelled parts of an app's front window (buttons, fields, toolbars, sidebars…) with role, label and frame (points, top-left origin). Use a label with take_screenshot mode element. Needs Accessibility permission for Clarishot.",
+             ["app": ["type": "string"], "query": ["type": "string", "description": "Only elements whose label or role contains this"],
+              "limit": ["type": "integer"]], required: ["app"]),
         tool("start_recording", "Start Clarishot's screen recording flow; the user picks the area and presses Record.", [:]),
         tool("stop_recording", "Stop the current recording and return the saved file path.", [:])
     ]
@@ -274,6 +318,17 @@ final class MCPServer {
                 var params = try imageParams(path)
                 params["action"] = args["action"] ?? "annotate"
                 return text(json(try call("open", params)))
+            case "annotate_image":
+                guard let path = args["path"] as? String else { return text("annotate_image needs path", error: true) }
+                var params = try imageParams(path)
+                for key in ["shapes", "scale", "open"] { if let v = args[key] { params[key] = v } }
+                let result = try call("annotate", params) as? [String: Any] ?? [:]
+                var content: [[String: Any]] = [["type": "text", "text": json(result)]]
+                if let out = result["path"] as? String, let png = base64PNG(out) {
+                    content.append(["type": "image", "data": png, "mimeType": "image/png"])
+                }
+                return ["content": content, "isError": false]
+            case "list_elements": return text(json(try call("elements", args)))
             case "start_recording": return text(json(try call("record_start")))
             case "stop_recording": return text(json(try call("record_stop")))
             default: return text("Unknown tool \(name)", error: true)

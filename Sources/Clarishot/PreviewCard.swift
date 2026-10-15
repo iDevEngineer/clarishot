@@ -364,12 +364,21 @@ final class PreviewCardView: NSView, NSDraggingSource {
         let b = hoverView.bounds
         let copy = PillButton(title: "Copy") { [weak self] in self?.copy() }
         let save = PillButton(title: "Save") { [weak self] in self?.save() }
+        var pills = [copy, save]
+        if !capture.isVideo {
+            let forAI = PillButton(title: "Copy for AI") { [weak self] in self?.copyForAI() }
+            forAI.toolTip = "Copies the screenshot with its text, app, window title and web address, ready to paste into an AI chat"
+            pills.append(forAI)
+        }
         let gap: CGFloat = 6
-        let total = copy.frame.height * 2 + gap
-        copy.setFrameOrigin(CGPoint(x: b.midX - copy.frame.width / 2, y: b.midY + total / 2 - copy.frame.height))
-        save.setFrameOrigin(CGPoint(x: b.midX - save.frame.width / 2, y: b.midY - total / 2))
-        hoverView.addSubview(copy)
-        hoverView.addSubview(save)
+        let total = copy.frame.height * CGFloat(pills.count) + gap * CGFloat(pills.count - 1)
+        var y = b.midY + total / 2
+        for pill in pills {
+            y -= pill.frame.height
+            pill.setFrameOrigin(CGPoint(x: b.midX - pill.frame.width / 2, y: y))
+            y -= gap
+            hoverView.addSubview(pill)
+        }
 
         let inset: CGFloat = 6
         let size = CircleButton.size
@@ -430,6 +439,16 @@ final class PreviewCardView: NSView, NSDraggingSource {
         capture.copyToClipboard()
         Toast.show("Copied to clipboard")
         onDismiss?()
+    }
+
+    /// Screenshot plus a text description (app, window, address, the text in it) on the clipboard.
+    private func copyForAI() {
+        let capture = self.capture
+        let dismiss = onDismiss
+        Task { @MainActor in
+            await AIClipboard.copy(capture)
+            dismiss?()
+        }
     }
 
     private func save() {
@@ -535,4 +554,38 @@ final class CircleButton: NSButton {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     @objc private func clicked() { handler() }
+}
+
+
+/// "Copy for AI": the picture and a short text description in one clipboard item, so an AI chat
+/// gets the screenshot and its context together. Private text is covered first when
+/// "Hide sensitive info from AI tools" is on.
+@MainActor
+enum AIClipboard {
+    static func copy(_ original: Capture) async {
+        var capture = original, hidden = 0
+        if Settings.shared.agentHideSensitive { (capture, hidden) = await AgentRedaction.redact(original) }
+        let text = await ScreenCapturer.recognizeText(in: capture.image)
+        let context = CaptureContext.windowInfo(bundleID: capture.sourceBundleID)
+        let appName = capture.sourceBundleID
+            .flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+            .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") }
+
+        var lines = ["Screenshot" + (appName.map { " of \($0)" } ?? "") + (context.title.map { " — “\($0)”" } ?? "")]
+        if let url = context.url { lines.append("Address: \(url)") }
+        lines.append("Size: \(Int(capture.pointSize.width)) × \(Int(capture.pointSize.height)) points")
+        if hidden > 0 { lines.append("Note: \(hidden) private item\(hidden == 1 ? " was" : "s were") covered with black boxes.") }
+        if !text.isEmpty { lines += ["", "Text in the screenshot:", "```", text, "```"] }
+        let description = lines.joined(separator: "\n")
+
+        let item = NSPasteboardItem()
+        let rep = NSBitmapImageRep(cgImage: capture.image)
+        rep.size = capture.pointSize
+        if let png = rep.representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
+        if let tiff = capture.nsImage.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        item.setString(description, forType: .string)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([item])
+        Toast.show(hidden > 0 ? "Copied for AI (\(hidden) private item\(hidden == 1 ? "" : "s") hidden)" : "Copied for AI")
+    }
 }

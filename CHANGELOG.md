@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- AI tools: private text is covered before an AI tool sees a screenshot or its text (on by default).
+- AI tools: one-click Connect for Claude Code, ChatGPT Codex, Claude Desktop and Cursor, with connected status.
+- Preview card: Copy for AI (screenshot plus app, window title, web address and text).
+- AI tools: annotate_image draws arrows, boxes, labels, steps, highlights and blur on an image.
+- AI tools: list_elements and take_screenshot mode element capture one part of an app by name.
+
 ## [0.2.2] - 2026-10-15
 
 ### Added

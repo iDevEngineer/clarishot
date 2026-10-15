@@ -497,6 +497,12 @@ final class Settings {
     }
 
     /// Lets the `clarishot` command-line tool and its MCP server (for AI tools) drive Clarishot.
+    /// Cover private text (emails, keys, card numbers…) in every screenshot an AI tool takes.
+    var agentHideSensitive: Bool {
+        get { bool("agentHideSensitive", default: true) }
+        set { set(newValue, "agentHideSensitive") }
+    }
+
     var allowAgentAccess: Bool {
         get { bool("allowAgentAccess", default: false) }
         set { set(newValue, "allowAgentAccess") }

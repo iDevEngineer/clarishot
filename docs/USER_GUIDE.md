@@ -92,6 +92,9 @@ A card appears in the corner (choose which in **Preferences → Quick Access**).
 - File info at the top: size in pixels, format and file size
 - Drag the card into any app to drop the image there.
 - Swipe it toward the screen edge with two fingers to dismiss it.
+- **Copy for AI** copies the screenshot together with a short description (app, window title, web
+  address and the text in it), ready to paste into ChatGPT, Claude or another AI chat. Private text is
+  covered first while **Hide sensitive info from AI tools** is on.
 
 The card can close by itself after a set time, optionally saving first.
 **Restore Recently Closed** in the menu brings back the last card.

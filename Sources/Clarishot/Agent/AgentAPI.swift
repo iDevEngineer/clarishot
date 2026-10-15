@@ -18,7 +18,9 @@ enum AgentAPI {
         case "open": return try open(p)
         case "record_start": return try recordStart()
         case "record_stop": return try await recordStop()
-        default: throw AgentError("Unknown method “\(method)”. Try: status, displays, windows, screenshot, ocr, history, open, record_start, record_stop.")
+        case "annotate": return try annotate(p)
+        case "elements": return try elements(p)
+        default: throw AgentError("Unknown method “\(method)”. Try: status, displays, windows, screenshot, ocr, history, open, annotate, elements, record_start, record_stop.")
         }
     }
 
@@ -29,6 +31,8 @@ enum AgentAPI {
          "app": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
          "screenRecordingAllowed": CGPreflightScreenCaptureAccess(),
          "recording": RecordingCoordinator.shared.isRecording,
+         "hidesSensitiveInfo": Settings.shared.agentHideSensitive,
+         "accessibilityAllowed": AXIsProcessTrusted(),
          "captureFolder": outputFolder.path]
     }
 
@@ -76,7 +80,11 @@ enum AgentAPI {
 
     private static func screenshot(_ p: [String: Any]) async throws -> [String: Any] {
         let mode = p["mode"] as? String ?? (p["window_id"] != nil || p["app"] != nil ? "window" : (p["x"] != nil ? "area" : "fullscreen"))
-        let capture = try await image(mode: mode, p)
+        var capture = try await image(mode: mode, p)
+        var hidden = 0
+        if (p["redact"] as? Bool) ?? Settings.shared.agentHideSensitive {
+            (capture, hidden) = await AgentRedaction.redact(capture)
+        }
         if (p["show"] as? Bool) == true {
             CaptureCoordinator.shared.deliver(capture)
         } else {
@@ -94,8 +102,55 @@ enum AgentAPI {
             throw AgentError("Could not encode the screenshot")
         }
         try png.write(to: url)
-        return ["path": url.path, "width": capture.image.width, "height": capture.image.height,
-                "scale": capture.scale, "mode": mode]
+        var result: [String: Any] = ["path": url.path, "width": capture.image.width, "height": capture.image.height,
+                                     "scale": capture.scale, "mode": mode, "pointWidth": capture.pointSize.width,
+                                     "pointHeight": capture.pointSize.height]
+        if hidden > 0 { result["hiddenSensitiveItems"] = hidden }
+        return result
+    }
+
+    /// Saves a PNG to the agent folder with a unique name.
+    private static func save(_ capture: Capture, suffix: String) throws -> URL {
+        var url = outputFolder.appendingPathComponent("Clarishot \(Capture.timestamp(capture.date)) \(suffix).png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = outputFolder.appendingPathComponent("Clarishot \(Capture.timestamp(capture.date)) \(suffix) (\(n)).png")
+            n += 1
+        }
+        guard let png = ImageEncoder.encode(capture.image, as: .png, quality: 1, pointSize: capture.pointSize) else {
+            throw AgentError("Could not encode the image")
+        }
+        try png.write(to: url)
+        return url
+    }
+
+    // MARK: Drawing on images
+
+    /// Draws arrows, boxes, labels, blur… onto an image. `shapes` use image points (top-left).
+    /// open: true also opens it in the editor with every shape still editable.
+    private static func annotate(_ p: [String: Any]) throws -> [String: Any] {
+        let image = try decodedImage(p)
+        let scale = (p["scale"] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 2
+        let shapes = try AgentAnnotate.shapes(from: p["shapes"] as? [[String: Any]] ?? [])
+        guard !shapes.isEmpty else { throw AgentError("annotate needs a list of shapes") }
+        let capture = Capture(image: image, scale: scale)
+        let document = AnnotateDocument(capture: capture)
+        document.annotations = shapes
+        guard let result = document.rendered() else { throw AgentError("Could not draw the shapes") }
+        let url = try save(result, suffix: "annotated")
+        HistoryStore.shared.add(result)
+        if (p["open"] as? Bool) == true { AnnotateWindowController.open(capture, shapes: shapes) }
+        return ["path": url.path, "shapes": shapes.count, "width": result.image.width, "height": result.image.height]
+    }
+
+    // MARK: App elements
+
+    private static func elements(_ p: [String: Any]) throws -> [[String: Any]] {
+        guard let app = p["app"] as? String else { throw AgentError("elements needs app") }
+        return try AgentElements.list(app: app, query: p["query"] as? String, limit: p["limit"] as? Int ?? 150).map {
+            ["role": $0.role, "label": $0.label,
+             "frame": ["x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height]]
+        }
     }
 
     /// Captures for `mode`: fullscreen, area (x, y, width, height), window (window_id or app), interactive.
@@ -144,6 +199,17 @@ enum AgentAPI {
                 }
             }
 
+        case "element":
+            guard let app = p["app"] as? String, let query = p["query"] as? String else {
+                throw AgentError("element needs app and query (a button title, label or role, e.g. \"Save\" or \"sidebar\")")
+            }
+            let element = try AgentElements.best(app: app, query: query)
+            let pad = number(p["padding"]) ?? 8
+            var area = p
+            let r = element.frame.insetBy(dx: -pad, dy: -pad)
+            area["x"] = r.minX; area["y"] = r.minY; area["width"] = r.width; area["height"] = r.height
+            return try await image(mode: "area", area)
+
         case "smart":
             NSApp.activate(ignoringOtherApps: true)
             let (screen, rect, bundle) = try await withCheckedThrowingContinuation { continuation in
@@ -171,7 +237,7 @@ enum AgentAPI {
             return Capture(image: cut, scale: source.scale).from(source.sourceBundleID)
 
         default:
-            throw AgentError("mode must be fullscreen, area, window, interactive, smart or cutout")
+            throw AgentError("mode must be fullscreen, area, window, element, interactive, smart or cutout")
         }
     }
 
@@ -187,7 +253,12 @@ enum AgentAPI {
             image = try decodedImage(p)
         } else {
             let mode = p["mode"] as? String ?? (p["x"] != nil ? "area" : "interactive")
-            image = try await self.image(mode: mode, p).image
+            var capture = try await self.image(mode: mode, p)
+            // Read from the covered image, so private text never reaches the AI tool.
+            if (p["redact"] as? Bool) ?? Settings.shared.agentHideSensitive {
+                capture = await AgentRedaction.redact(capture).0
+            }
+            image = capture.image
         }
         return ["text": await ScreenCapturer.recognizeText(in: image)]
     }

@@ -359,6 +359,33 @@ class SettingsPane: NSViewController {
     func block(_ view: NSView) { blocks.append(view) }
 
     /// Title (and optional grey note) on the left, control on the right.
+    /// "Claude Code · Connected ✓", or a Connect button, or Copy for apps that aren't installed.
+    func connectRow(_ target: AgentConnect.Target) -> NSView {
+        let title = "Connect \(target.name)"
+        switch AgentConnect.state(target) {
+        case .connected:
+            let done = NSTextField(labelWithString: "✓ Connected")
+            done.textColor = .systemGreen
+            done.font = .systemFont(ofSize: 13, weight: .medium)
+            return row(title, done, note: target == .codex ? "Codex app and codex command line." : nil)
+        case .notConnected:
+            return row(title, button("Connect") { [weak self] in
+                AgentConnect.connect(target)
+                self?.rebuild()
+            }, note: target == .codex ? "Codex app and codex command line." : "Adds Clarishot to \(target.name) in one click.")
+        case .notInstalled:
+            let copy: () -> Void = {
+                switch target {
+                case .claudeCode: AgentSetup.copy(AgentSetup.claudeCodeCommand)
+                case .codex: AgentSetup.copy(AgentSetup.codexCommand)
+                default: AgentSetup.copy(AgentSetup.mcpJSON)
+                }
+            }
+            let copyTitle = target == .claudeCode || target == .codex ? "Copy Command" : "Copy JSON"
+            return row(title, button(copyTitle, action: copy), note: "\(target.name) isn't installed on this Mac.")
+        }
+    }
+
     func row(_ title: String, _ control: NSView?, note: String? = nil) -> NSView {
         if let control, let symbol = PreferenceIcons.symbol(for: title) {
             return iconRow(symbol, title, note: note, control)
@@ -1031,11 +1058,11 @@ final class AdvancedPane: SettingsPane {
         section("AI Tools & Command Line", [
             row("Allow AI tools & command line", toggle({ s.allowAgentAccess }, { s.allowAgentAccess = $0 }),
                 note: "Lets the clarishot command-line tool and AI tools (via MCP) take screenshots, read text and list windows through Clarishot. Any app you run can use it while this is on."),
-            row("Add to Claude Code", button("Copy Command") { AgentSetup.copy(AgentSetup.claudeCodeCommand) },
-                note: "Copies a command to paste in Terminal."),
-            row("Add to ChatGPT Codex", button("Copy Command") { AgentSetup.copy(AgentSetup.codexCommand) },
-                note: "Copies a command to paste in Terminal. Works in the Codex app and the codex command-line tool."),
-            row("Claude Desktop, Cursor and other MCP apps", button("Copy JSON") { AgentSetup.copy(AgentSetup.mcpJSON) }),
+            row("Hide sensitive info from AI tools", toggle({ s.agentHideSensitive }, { s.agentHideSensitive = $0 }),
+                note: "Covers emails, phone numbers, card numbers, API keys and passwords with black boxes before an AI tool sees a screenshot or its text."),
+        ] + AgentConnect.Target.allCases.map { connectRow($0) } + [
+            row("Other MCP apps", button("Copy JSON") { AgentSetup.copy(AgentSetup.mcpJSON) },
+                note: "Paste into the app's MCP settings."),
             row("Command-line tool", button("Install “clarishot” Command") { AgentSetup.installCommand() },
                 note: "Adds clarishot to ~/.local/bin. Run “clarishot help” to see what it can do.")
         ])

@@ -1364,3 +1364,15 @@ extension AnnotateWindowController {
         }
     }
 }
+
+
+extension AnnotateWindowController {
+    /// Opens an image with shapes already drawn (and editable), e.g. from an AI tool.
+    static func open(_ capture: Capture, shapes: [Annotation]) {
+        open(capture)
+        guard let controller = openControllers.last else { return }
+        controller.document.annotations = shapes
+        controller.document.revision += 1
+        controller.canvas.refresh()
+    }
+}
