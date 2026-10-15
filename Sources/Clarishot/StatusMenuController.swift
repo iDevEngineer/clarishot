@@ -65,9 +65,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         add(menu, "Capture History...", symbol: "clock.arrow.circlepath", action: #selector(openHistory))
         restoreItem = add(menu, "Restore Recently Closed", symbol: "arrow.uturn.backward", action: #selector(restoreClosed))
         menu.addItem(.separator())
-        add(menu, "About Clarishot", symbol: nil, action: #selector(about))
-        add(menu, "Check for Updates...", symbol: nil, action: #selector(checkForUpdates))
-        add(menu, "Setup Guide...", symbol: nil, action: #selector(setupGuide))
+        add(menu, "About Clarishot", symbol: "info.circle", action: #selector(about))
+        add(menu, "Check for Updates...", symbol: "arrow.triangle.2.circlepath", action: #selector(checkForUpdates))
+        add(menu, "Setup Guide...", symbol: "checklist", action: #selector(setupGuide))
         menu.addItem(.separator())
         let settings = add(menu, "Preferences...", symbol: nil, action: #selector(openSettings))
         settings.keyEquivalent = ","
