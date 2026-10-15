@@ -57,7 +57,18 @@ built-in MCP server.
 
 ## Install
 
-Clarishot is currently built from source. You need Xcode 26 or later (or its command-line tools), because the code uses the macOS 26 SDK.
+With [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask idevengineer/tap/clarishot
+```
+
+Or download the zip from the [latest release](https://github.com/iDevEngineer/clarishot/releases/latest).
+Clarishot keeps itself up to date after that.
+
+### Build from source
+
+You need Xcode 26 or later (or its command-line tools), because the code uses the macOS 26 SDK.
 
 ```bash
 git clone https://github.com/iDevEngineer/clarishot.git

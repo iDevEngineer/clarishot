@@ -110,3 +110,4 @@ echo
 echo "Released v$NEW (not pushed yet)."
 echo "  git push && git push --tags"
 echo "  gh release create v$NEW build/Clarishot-$NEW.zip build/appcast.xml --title \"Clarishot $NEW\" --notes-file build/release-notes.md"
+echo "  ./scripts/update-tap.sh $NEW"

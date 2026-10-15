@@ -147,6 +147,7 @@ ready to attach to a GitHub release:
 
 ```bash
 gh release create vX.Y.Z build/Clarishot-X.Y.Z.zip build/appcast.xml --notes-file build/release-notes.md
+./scripts/update-tap.sh X.Y.Z   # points the Homebrew cask at the new release
 ```
 
 ### Notarisation and auto-updates
