@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
 ### Added
 - Automatic updates (Check for Updates… in the menu and About; daily checks, optional auto-install), and notarised release builds.
 - First-run setup guide: welcome, permissions with live status and Allow buttons, shortcuts, launch at login.
@@ -51,5 +53,6 @@ First public release.
 - Preferences with themes, optional Liquid Glass, and every shortcut configurable.
 - MCP server and `clarishot` command-line tool for AI tools and scripts; `clarishot://` links.
 
-[Unreleased]: https://github.com/iDevEngineer/clarishot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/iDevEngineer/clarishot/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/iDevEngineer/clarishot/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/iDevEngineer/clarishot/releases/tag/v0.1.0
