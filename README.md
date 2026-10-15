@@ -125,6 +125,12 @@ Turn on **Preferences → Advanced → Allow AI tools & command line**, then add
 claude mcp add --scope user clarishot -- /Applications/Clarishot.app/Contents/Helpers/clarishot mcp
 ```
 
+For ChatGPT Codex (app or command line):
+
+```bash
+codex mcp add clarishot -- /Applications/Clarishot.app/Contents/Helpers/clarishot mcp
+```
+
 Now you can ask things like *"take a screenshot of my Safari window and summarise it"*.
 See [AI tools & command line](docs/AI_AND_CLI.md) for other apps, every tool and the `clarishot` command.
 

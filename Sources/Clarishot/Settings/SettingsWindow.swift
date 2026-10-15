@@ -1033,6 +1033,8 @@ final class AdvancedPane: SettingsPane {
                 note: "Lets the clarishot command-line tool and AI tools (via MCP) take screenshots, read text and list windows through Clarishot. Any app you run can use it while this is on."),
             row("Add to Claude Code", button("Copy Command") { AgentSetup.copy(AgentSetup.claudeCodeCommand) },
                 note: "Copies a command to paste in Terminal."),
+            row("Add to ChatGPT Codex", button("Copy Command") { AgentSetup.copy(AgentSetup.codexCommand) },
+                note: "Copies a command to paste in Terminal. Works in the Codex app and the codex command-line tool."),
             row("Claude Desktop, Cursor and other MCP apps", button("Copy JSON") { AgentSetup.copy(AgentSetup.mcpJSON) }),
             row("Command-line tool", button("Install “clarishot” Command") { AgentSetup.installCommand() },
                 note: "Adds clarishot to ~/.local/bin. Run “clarishot help” to see what it can do.")
@@ -1186,6 +1188,9 @@ enum AgentSetup {
     static var cliPath: String { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/clarishot").path }
 
     static var claudeCodeCommand: String { "claude mcp add --scope user clarishot -- \"\(cliPath)\" mcp" }
+
+    /// OpenAI's Codex (app and CLI share ~/.codex/config.toml).
+    static var codexCommand: String { "codex mcp add clarishot -- \"\(cliPath)\" mcp" }
 
     static var mcpJSON: String {
         """

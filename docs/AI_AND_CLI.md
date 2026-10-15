@@ -38,6 +38,15 @@ claude mcp add --scope user clarishot -- /Applications/Clarishot.app/Contents/He
 
 Start a new Claude Code session afterwards. **Copy Command** in Preferences copies this line for you.
 
+### ChatGPT Codex (app and command line)
+
+```bash
+codex mcp add clarishot -- /Applications/Clarishot.app/Contents/Helpers/clarishot mcp
+```
+
+The Codex app and the `codex` command-line tool share this setting. Start a new session afterwards.
+The ChatGPT chat app itself only connects to online MCP servers, so it can't use Clarishot directly.
+
 ### Claude Desktop, Cursor and other MCP apps
 
 Add this to the app's MCP configuration (**Copy JSON** in Preferences copies it):

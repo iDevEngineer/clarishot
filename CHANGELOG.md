@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- Preferences → Advanced: one-click setup command for ChatGPT Codex.
+
 ### Fixed
 - Wallpaper backgrounds came out black on recent macOS: an invisible Dock window was captured instead of the picture.
 
