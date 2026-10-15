@@ -73,7 +73,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = .command
         menu.addItem(.separator())
-        add(menu, "Quit", symbol: nil, action: #selector(quit))
+        add(menu, "Quit", symbol: "power", action: #selector(quit))
         return menu
     }
 
