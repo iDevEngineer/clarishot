@@ -82,7 +82,7 @@ enum PreferenceIcons {
         "Border": "square.dashed",
         "Allow AI tools & command line": "terminal",
         "Add to Claude Code": "sparkles",
-        "Add to ChatGPT Codex": "chevron.left.forwardslash.chevron.right",
+        "Add to ChatGPT Codex": "sparkles",
         "Claude Desktop, Cursor and other MCP apps": "curlybraces",
         "Command-line tool": "apple.terminal",
         "Allow URL scheme API": "link.badge.plus",
