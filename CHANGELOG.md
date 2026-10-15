@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - AI tools: annotate_image draws arrows, boxes, labels, steps, highlights and blur on an image.
 - AI tools: list_elements and take_screenshot mode element capture one part of an app by name.
 
+### Changed
+- AI tools: window titles and element labels are checked for private text too, and only you can turn hiding off.
+
 ## [0.2.2] - 2026-10-15
 
 ### Added
