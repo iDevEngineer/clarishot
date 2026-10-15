@@ -1171,6 +1171,17 @@ enum CrosshairCursor {
             path.lineWidth = 2
             color.setStroke()
             path.stroke()
+            // Plus: a thin ring halfway along the arms.
+            if shape == .plus {
+                let r = arm / 2
+                let ring = NSBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+                ring.lineWidth = 2.5
+                NSColor.black.withAlphaComponent(0.45).setStroke()
+                ring.stroke()
+                ring.lineWidth = 1
+                color.setStroke()
+                ring.stroke()
+            }
             // Centre dot (bigger on its own).
             let d: CGFloat = shape == .dot ? max(4, arm * 0.45) : 3
             if shape != .plus {

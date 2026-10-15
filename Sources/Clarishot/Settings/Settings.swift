@@ -471,7 +471,7 @@ final class Settings {
 
     enum CrosshairShape: Int, CaseIterable {
         case gapCross, plus, circle, dot
-        var title: String { ["Cross with gap", "Plus", "Circle and dot", "Dot"][rawValue] }
+        var title: String { ["Cross with gap", "Plus with ring", "Circle and dot", "Dot"][rawValue] }
     }
 
     var crosshairShape: CrosshairShape {
