@@ -535,6 +535,44 @@ final class GeneralPane: SettingsPane {
                     }),
             iconRow("circle.lefthalf.filled", "Theme", note: "Choose your preferred appearance", themes)
         ]
+        // Crosshair cursor: shape, size and colour, with a live preview.
+        let preview = NSImageView(image: CrosshairCursor.image(shape: s.crosshairShape, size: s.crosshairSize,
+                                                              color: s.crosshairColor))
+        preview.wantsLayer = true
+        preview.layer?.cornerRadius = 8
+        preview.layer?.backgroundColor = NSColor(white: 0.45, alpha: 1).cgColor
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        preview.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        preview.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        func refreshPreview() {
+            preview.image = CrosshairCursor.image(shape: s.crosshairShape, size: s.crosshairSize, color: s.crosshairColor)
+        }
+        let shapes = popup(Settings.CrosshairShape.allCases.map(\.title), selected: s.crosshairShape.rawValue) { index in
+            s.crosshairShape = Settings.CrosshairShape(rawValue: index) ?? .gapCross
+            refreshPreview()
+        }
+        let sizes = popup(["Small", "Medium", "Large"], selected: s.crosshairSize) { index in
+            s.crosshairSize = index
+            refreshPreview()
+        }
+        let color = OklchColorButton(color: s.crosshairColor, size: CGSize(width: 28, height: 22))
+        color.toolTip = "Crosshair colour"
+        color.onChange = { new in
+            s.crosshairColor = new
+            refreshPreview()
+        }
+        let reset = button("Reset") { [weak self] in
+            s.crosshairShape = .gapCross
+            s.crosshairSize = 1
+            s.crosshairColor = .white
+            self?.rebuild()
+        }
+        let controls = NSStackView(views: [shapes, sizes, color, reset])
+        controls.spacing = 6
+        let crosshair = NSStackView(views: [controls, preview])
+        crosshair.spacing = 10
+        appearance.append(iconRow("plus.viewfinder", "Crosshair",
+                                  note: "When picking an area", crosshair))
         if #available(macOS 26.0, *) {
             appearance.append(iconRow("sparkles", "Liquid Glass Effect",
                                       note: "Use translucent Liquid Glass for floating bars and panels. Turn off to use solid controls.",

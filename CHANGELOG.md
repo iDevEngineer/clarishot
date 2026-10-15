@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- Crosshair cursor options in Preferences → General → Appearance: shape, size and colour, with a preview.
+
 ### Changed
 - Licence changed from MIT to GPL-3.0 (earlier releases stay MIT).
 

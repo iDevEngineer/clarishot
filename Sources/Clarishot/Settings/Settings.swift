@@ -467,6 +467,29 @@ final class Settings {
         set { set(newValue, "colorNames") }
     }
 
+    // MARK: Crosshair cursor (the pointer while picking an area)
+
+    enum CrosshairShape: Int, CaseIterable {
+        case gapCross, plus, circle, dot
+        var title: String { ["Cross with gap", "Plus", "Circle and dot", "Dot"][rawValue] }
+    }
+
+    var crosshairShape: CrosshairShape {
+        get { CrosshairShape(rawValue: defaults.integer(forKey: "crosshairShape")) ?? .gapCross }
+        set { set(newValue.rawValue, "crosshairShape") }
+    }
+
+    /// 0 small, 1 medium, 2 large.
+    var crosshairSize: Int {
+        get { defaults.object(forKey: "crosshairSize") as? Int ?? 1 }
+        set { set(min(max(newValue, 0), 2), "crosshairSize") }
+    }
+
+    var crosshairColor: NSColor {
+        get { (defaults.string(forKey: "crosshairColor")).flatMap(NSColor.init(saved:)) ?? .white }
+        set { set(newValue.p3String, "crosshairColor") }
+    }
+
     /// Full-screen guide lines through the cursor while selecting an area.
     var crosshairLines: Bool {
         get { bool("crosshairLines", default: false) }

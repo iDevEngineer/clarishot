@@ -1127,37 +1127,63 @@ enum CameraCursor {
     }
 }
 
-/// A large crosshair cursor: four arms with a gap in the middle, white with a
-/// dark outline so it shows on any background. The hot spot is the centre.
+/// The crosshair cursor shown while picking an area, in the shape, size and colour chosen in
+/// Preferences → General → Appearance. A dark outline keeps it visible on any background.
+/// The hot spot is the centre.
 @MainActor
 enum CrosshairCursor {
-    static let shared: NSCursor = {
-        let size: CGFloat = 40
-        let image = NSImage(size: CGSize(width: size, height: size), flipped: false) { rect in
+    private static var cached: (key: String, cursor: NSCursor)?
+
+    static var shared: NSCursor {
+        let s = Settings.shared
+        let key = "\(s.crosshairShape.rawValue)-\(s.crosshairSize)-\(s.crosshairColor.p3String)"
+        if let cached, cached.key == key { return cached.cursor }
+        let image = image(shape: s.crosshairShape, size: s.crosshairSize, color: s.crosshairColor)
+        let cursor = NSCursor(image: image, hotSpot: CGPoint(x: image.size.width / 2, y: image.size.height / 2))
+        cached = (key, cursor)
+        return cursor
+    }
+
+    /// The cursor picture; also used for the preview in Preferences.
+    static func image(shape: Settings.CrosshairShape, size: Int, color: NSColor) -> NSImage {
+        let arm: CGFloat = [11, 17, 24][min(max(size, 0), 2)]
+        let side = (arm + 4) * 2
+        return NSImage(size: CGSize(width: side, height: side), flipped: false) { rect in
             let c = CGPoint(x: rect.midX, y: rect.midY)
-            let gap: CGFloat = 5, arm: CGFloat = 17
             let path = NSBezierPath()
-            path.move(to: CGPoint(x: c.x - arm, y: c.y)); path.line(to: CGPoint(x: c.x - gap, y: c.y))
-            path.move(to: CGPoint(x: c.x + gap, y: c.y)); path.line(to: CGPoint(x: c.x + arm, y: c.y))
-            path.move(to: CGPoint(x: c.x, y: c.y - arm)); path.line(to: CGPoint(x: c.x, y: c.y - gap))
-            path.move(to: CGPoint(x: c.x, y: c.y + gap)); path.line(to: CGPoint(x: c.x, y: c.y + arm))
+            switch shape {
+            case .gapCross, .plus:
+                let gap: CGFloat = shape == .gapCross ? arm * 0.3 : 0
+                path.move(to: CGPoint(x: c.x - arm, y: c.y)); path.line(to: CGPoint(x: c.x - gap, y: c.y))
+                path.move(to: CGPoint(x: c.x + gap, y: c.y)); path.line(to: CGPoint(x: c.x + arm, y: c.y))
+                path.move(to: CGPoint(x: c.x, y: c.y - arm)); path.line(to: CGPoint(x: c.x, y: c.y - gap))
+                path.move(to: CGPoint(x: c.x, y: c.y + gap)); path.line(to: CGPoint(x: c.x, y: c.y + arm))
+            case .circle:
+                let r = arm * 0.75
+                path.appendOval(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            case .dot:
+                break
+            }
             path.lineCapStyle = .round
             path.lineWidth = 4.5
             NSColor.black.withAlphaComponent(0.55).setStroke()
             path.stroke()
             path.lineWidth = 2
-            NSColor.white.setStroke()
+            color.setStroke()
             path.stroke()
-            let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 1.5, y: c.y - 1.5, width: 3, height: 3))
-            NSColor.black.withAlphaComponent(0.55).setStroke()
-            dot.lineWidth = 1.5
-            dot.stroke()
-            NSColor.white.setFill()
-            dot.fill()
+            // Centre dot (bigger on its own).
+            let d: CGFloat = shape == .dot ? max(4, arm * 0.45) : 3
+            if shape != .plus {
+                let dot = NSBezierPath(ovalIn: CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d))
+                NSColor.black.withAlphaComponent(0.55).setStroke()
+                dot.lineWidth = 1.5
+                dot.stroke()
+                color.setFill()
+                dot.fill()
+            }
             return true
         }
-        return NSCursor(image: image, hotSpot: CGPoint(x: size / 2, y: size / 2))
-    }()
+    }
 }
 
 /// The aspect-ratio choices shared by the All-In-One bar and the recording panel.
