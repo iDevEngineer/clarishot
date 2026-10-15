@@ -142,8 +142,27 @@ git push && git push --tags
 ```
 
 `release.sh` bumps `VERSION`, moves the **Unreleased** notes into a dated section, commits, and creates
-a `vX.Y.Z` tag. It also builds `build/Clarishot-X.Y.Z.zip`, ready to attach to a GitHub release:
+a `vX.Y.Z` tag. It also builds `build/Clarishot-X.Y.Z.zip` and the update feed `build/appcast.xml`,
+ready to attach to a GitHub release:
 
 ```bash
-gh release create vX.Y.Z build/Clarishot-X.Y.Z.zip --notes-file build/release-notes.md
+gh release create vX.Y.Z build/Clarishot-X.Y.Z.zip build/appcast.xml --notes-file build/release-notes.md
 ```
+
+### Notarisation and auto-updates
+
+- **Auto-updates** use [Sparkle](https://sparkle-project.org). The app checks
+  `releases/latest/download/appcast.xml` once a day, so the repo must be public for updates to reach
+  anyone. Each zip is signed with an update key kept in the login keychain (account `clarishot`); its
+  public half is `SUPublicEDKey` in `Info.plist`. Back the private key up with
+  `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account clarishot -x <file>` and store that
+  file somewhere safe: without it, existing installs can't accept new updates.
+- **Notarisation** happens automatically when a "Developer ID Application" certificate is in the
+  keychain. One-time setup:
+  1. Join the Apple Developer Program and create a **Developer ID Application** certificate in Xcode
+     (Settings → Accounts → Manage Certificates).
+  2. Save notary credentials: `xcrun notarytool store-credentials clarishot` (Apple ID, team ID and an
+     app-specific password from appleid.apple.com).
+
+  `release.sh` then signs with the hardened runtime, submits to Apple, staples the ticket and
+  checks the result with `spctl`. Without the certificate it still builds, with a warning.

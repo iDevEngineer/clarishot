@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- Automatic updates (Check for Updates… in the menu and About; daily checks, optional auto-install), and notarised release builds.
 - First-run setup guide: welcome, permissions with live status and Allow buttons, shortcuts, launch at login.
 - Draw on screen while recording (⌥⇧⌘D): pen, highlighter, arrow, rectangle, colours, fade, undo and clear.
 - Zoom editor: zooms can follow the cursor, panning smoothly along the recorded pointer path.

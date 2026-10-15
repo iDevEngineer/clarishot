@@ -55,11 +55,58 @@ git add VERSION CHANGELOG.md
 git commit -q -m "Release v$NEW"
 git tag -a "v$NEW" -m "Clarishot $NEW"
 
-INSTALL=0 ./scripts/build-app.sh
-rm -f "build/Clarishot-$NEW.zip"
-ditto -c -k --keepParent build/Clarishot.app "build/Clarishot-$NEW.zip"
+# Notarised releases need a "Developer ID Application" certificate in the keychain and notary
+# credentials saved once with:  xcrun notarytool store-credentials clarishot
+DEV_ID=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
+if [ -n "$DEV_ID" ]; then
+    SIGN_IDENTITY="$DEV_ID" INSTALL=0 ./scripts/build-app.sh
+else
+    echo "warning: no Developer ID Application certificate; this build is NOT notarised and macOS will warn users." >&2
+    INSTALL=0 ./scripts/build-app.sh
+fi
+ZIP="build/Clarishot-$NEW.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent build/Clarishot.app "$ZIP"
+
+if [ -n "$DEV_ID" ]; then
+    echo "Notarising (usually a few minutes)…"
+    xcrun notarytool submit "$ZIP" --keychain-profile clarishot --wait
+    xcrun stapler staple build/Clarishot.app
+    spctl --assess --type execute --verbose build/Clarishot.app
+    # Re-zip so the download carries the stapled ticket.
+    rm -f "$ZIP"
+    ditto -c -k --keepParent build/Clarishot.app "$ZIP"
+fi
+
+# Sparkle feed: sign the zip with the update key (kept in the keychain, account "clarishot")
+# and write build/appcast.xml, which the app reads from the latest GitHub release.
+SIGNATURE=$(.build/artifacts/sparkle/Sparkle/bin/sign_update --account clarishot "$ZIP")
+BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" build/Clarishot.app/Contents/Info.plist)
+python3 - "$NEW" "$BUILD_NUMBER" "$SIGNATURE" <<'PY'
+import html, sys
+from email.utils import formatdate
+new, build, signature = sys.argv[1:]
+notes = html.escape(open("build/release-notes.md").read())
+url = f"https://github.com/iDevEngineer/clarishot/releases/download/v{new}/Clarishot-{new}.zip"
+open("build/appcast.xml", "w").write(f"""<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Clarishot</title>
+    <item>
+      <title>Clarishot {new}</title>
+      <pubDate>{formatdate(localtime=False, usegmt=True)}</pubDate>
+      <sparkle:version>{build}</sparkle:version>
+      <sparkle:shortVersionString>{new}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description sparkle:format="plain-text">{notes}</description>
+      <enclosure url="{url}" type="application/octet-stream" {signature}/>
+    </item>
+  </channel>
+</rss>
+""")
+PY
 
 echo
 echo "Released v$NEW (not pushed yet)."
 echo "  git push && git push --tags"
-echo "  gh release create v$NEW build/Clarishot-$NEW.zip --title \"Clarishot $NEW\" --notes-file build/release-notes.md"
+echo "  gh release create v$NEW build/Clarishot-$NEW.zip build/appcast.xml --title \"Clarishot $NEW\" --notes-file build/release-notes.md"

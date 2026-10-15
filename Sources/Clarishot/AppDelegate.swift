@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.applicationIconImage = AppIcon.current
         statusMenu = StatusMenuController()
         Shortcuts.registerAll()
+        Updater.start()
         Wallpaper.startWatching()
         AgentServer.shared.sync()
         AppAppearance.apply()

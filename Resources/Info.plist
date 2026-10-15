@@ -51,6 +51,14 @@
 			</dict>
 		</dict>
 	</array>
+	<key>SUFeedURL</key>
+	<string>https://github.com/iDevEngineer/clarishot/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>CKy2qEVpnYDKJ6QUi9013kUCduLu/wEGgcQhS/3d/pA=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

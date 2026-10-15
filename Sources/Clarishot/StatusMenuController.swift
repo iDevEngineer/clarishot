@@ -66,6 +66,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         restoreItem = add(menu, "Restore Recently Closed", symbol: "arrow.uturn.backward", action: #selector(restoreClosed))
         menu.addItem(.separator())
         add(menu, "About Clarishot", symbol: nil, action: #selector(about))
+        add(menu, "Check for Updates...", symbol: nil, action: #selector(checkForUpdates))
         add(menu, "Setup Guide...", symbol: nil, action: #selector(setupGuide))
         menu.addItem(.separator())
         let settings = add(menu, "Preferences...", symbol: nil, action: #selector(openSettings))
@@ -117,6 +118,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func capturePreviousArea() { CaptureCoordinator.shared.capturePreviousArea() }
     @objc private func captureFullscreen() { CaptureCoordinator.shared.captureFullscreen() }
     @objc private func captureWindow() { CaptureCoordinator.shared.captureWindow() }
+    @objc private func checkForUpdates() { Updater.checkNow() }
     @objc private func setupGuide() { SetupGuideController.show() }
     @objc private func smartCapture() { CaptureCoordinator.shared.captureSmart() }
     /// Opening this menu closes other menus, so give the user a few seconds to reopen theirs.

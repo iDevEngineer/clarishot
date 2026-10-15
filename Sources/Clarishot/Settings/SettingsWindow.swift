@@ -547,6 +547,13 @@ final class GeneralPane: SettingsPane {
                     note: "When hidden, open Clarishot again from Finder to get back to Preferences.",
                     toggle({ s.showMenuBarIcon }, { s.showMenuBarIcon = $0 }))
         ])
+        section("Updates", [
+            iconRow("arrow.triangle.2.circlepath", "Check for updates automatically", note: "Once a day",
+                    toggle({ Updater.automaticChecks }, { Updater.automaticChecks = $0 })),
+            iconRow("arrow.down.circle", "Download and install updates automatically",
+                    note: "Updates install the next time Clarishot quits",
+                    toggle({ Updater.automaticDownloads }, { Updater.automaticDownloads = $0 }))
+        ])
         section("Appearance", appearance)
         section("Capture", [
             iconRow("eye.slash", "Hide desktop icons while capturing",
@@ -1045,8 +1052,8 @@ final class AboutPane: NSViewController {
         updates.bezelStyle = .push
         updates.bezelColor = .controlAccentColor
         updates.controlSize = .large
-        updates.toolTip = "Opens the latest releases on GitHub"
-        bind(updates) { NSWorkspace.shared.open(Self.repo.appendingPathComponent("releases")) }
+        updates.toolTip = "Check for a newer version of Clarishot"
+        bind(updates) { Updater.checkNow() }
 
         let header = NSStackView(views: [icon, name, tagline, version, updates])
         header.orientation = .vertical
