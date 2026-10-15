@@ -84,7 +84,7 @@ enum PreferenceIcons {
         "Hide sensitive info from AI tools": "eye.slash",
         "Connect Claude Code": "sparkles",
         "Connect ChatGPT Codex": "sparkles",
-        "Connect Claude Desktop": "sparkles",
+        "Connect Claude app (Chat)": "sparkles",
         "Connect Cursor": "sparkles",
         "Other MCP apps": "curlybraces",
         "Command-line tool": "apple.terminal",

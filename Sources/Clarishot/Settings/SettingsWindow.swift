@@ -367,12 +367,12 @@ class SettingsPane: NSViewController {
             let done = NSTextField(labelWithString: "✓ Connected")
             done.textColor = .systemGreen
             done.font = .systemFont(ofSize: 13, weight: .medium)
-            return row(title, done, note: target == .codex ? "Codex app and codex command line." : nil)
+            return row(title, done, note: target.detail)
         case .notConnected:
             return row(title, button("Connect") { [weak self] in
                 AgentConnect.connect(target)
                 self?.rebuild()
-            }, note: target == .codex ? "Codex app and codex command line." : "Adds Clarishot to \(target.name) in one click.")
+            }, note: target.detail)
         case .notInstalled:
             let copy: () -> Void = {
                 switch target {
@@ -382,7 +382,7 @@ class SettingsPane: NSViewController {
                 }
             }
             let copyTitle = target == .claudeCode || target == .codex ? "Copy Command" : "Copy JSON"
-            return row(title, button(copyTitle, action: copy), note: "\(target.name) isn't installed on this Mac.")
+            return row(title, button(copyTitle, action: copy), note: "\(target.detail) Not installed on this Mac.")
         }
     }
 

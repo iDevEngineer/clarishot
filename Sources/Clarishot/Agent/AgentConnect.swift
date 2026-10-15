@@ -8,11 +8,21 @@ enum AgentConnect {
     enum Target: CaseIterable {
         case claudeCode, codex, claudeDesktop, cursor
 
+        /// What it covers, shown under the name.
+        var detail: String {
+            switch self {
+            case .claudeCode: return "Terminal and the Code tab in the Claude app."
+            case .codex: return "Codex app and codex command line."
+            case .claudeDesktop: return "Regular conversations in the Claude app."
+            case .cursor: return "Cursor's AI chat and agent."
+            }
+        }
+
         var name: String {
             switch self {
             case .claudeCode: return "Claude Code"
             case .codex: return "ChatGPT Codex"
-            case .claudeDesktop: return "Claude Desktop"
+            case .claudeDesktop: return "Claude app (Chat)"
             case .cursor: return "Cursor"
             }
         }
@@ -85,7 +95,7 @@ enum AgentConnect {
                 try addToJSON(configFile(target)!)
             }
             if !Settings.shared.allowAgentAccess { Settings.shared.allowAgentAccess = true }
-            let restart = target == .claudeDesktop || target == .cursor ? "Restart \(target.name) to use it." : "Start a new session to use it."
+            let restart = target == .claudeDesktop ? "Restart the Claude app to use it." : target == .cursor ? "Restart Cursor to use it." : "Start a new session to use it."
             Toast.show("Connected to \(target.name). \(restart)")
             return true
         } catch {
