@@ -8,15 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - Preferences → Advanced: one-click setup command for ChatGPT Codex.
-
-### Fixed
-- Wallpaper backgrounds came out black on recent macOS: an invisible Dock window was captured instead of the picture.
+- Menu-bar menu: icons for Quit and Preferences.
 
 ### Changed
 - Uses about 60% less memory at rest: the live wallpaper is kept compressed, and large decoded images are freed after a minute idle.
 
-### Added
-- Menu-bar menu: icons for Quit and Preferences.
+### Fixed
+- Wallpaper backgrounds came out black on recent macOS: an invisible Dock window was captured instead of the picture.
 
 ## [0.2.1] - 2026-10-15
 
