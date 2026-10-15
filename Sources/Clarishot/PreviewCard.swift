@@ -566,7 +566,15 @@ enum AIClipboard {
         var capture = original, hidden = 0
         if Settings.shared.agentHideSensitive { (capture, hidden) = await AgentRedaction.redact(original) }
         let text = await ScreenCapturer.recognizeText(in: capture.image)
-        let context = CaptureContext.windowInfo(bundleID: capture.sourceBundleID)
+        var context = CaptureContext.windowInfo(bundleID: capture.sourceBundleID)
+        if Settings.shared.agentHideSensitive {
+            // Titles can hold emails or names of private documents; links can carry tokens in the query.
+            if let title = context.title { let (masked, n) = SensitiveDataFinder.mask(title); context.title = masked; hidden += n }
+            if let url = context.url, var parts = URLComponents(string: url) {
+                parts.query = nil; parts.fragment = nil; parts.user = nil; parts.password = nil
+                context.url = parts.string
+            }
+        }
         let appName = capture.sourceBundleID
             .flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
             .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") }

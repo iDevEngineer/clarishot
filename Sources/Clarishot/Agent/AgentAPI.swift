@@ -63,7 +63,9 @@ enum AgentAPI {
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
             if let app, !owner.localizedCaseInsensitiveContains(app), !bundle.localizedCaseInsensitiveContains(app) { return nil }
-            return ["id": Int(id), "app": owner, "bundleId": bundle, "title": info[kCGWindowName as String] as? String ?? "",
+            let rawTitle = info[kCGWindowName as String] as? String ?? ""
+            let title = Settings.shared.agentHideSensitive ? SensitiveDataFinder.mask(rawTitle).0 : rawTitle
+            return ["id": Int(id), "app": owner, "bundleId": bundle, "title": title,
                     "frame": ["x": bounds.minX, "y": bounds.minY, "width": bounds.width, "height": bounds.height]]
         }
     }
@@ -82,7 +84,7 @@ enum AgentAPI {
         let mode = p["mode"] as? String ?? (p["window_id"] != nil || p["app"] != nil ? "window" : (p["x"] != nil ? "area" : "fullscreen"))
         var capture = try await image(mode: mode, p)
         var hidden = 0
-        if (p["redact"] as? Bool) ?? Settings.shared.agentHideSensitive {
+        if mustRedact(p) {
             (capture, hidden) = await AgentRedaction.redact(capture)
         }
         if (p["show"] as? Bool) == true {
@@ -147,8 +149,9 @@ enum AgentAPI {
 
     private static func elements(_ p: [String: Any]) throws -> [[String: Any]] {
         guard let app = p["app"] as? String else { throw AgentError("elements needs app") }
+        let hide = Settings.shared.agentHideSensitive
         return try AgentElements.list(app: app, query: p["query"] as? String, limit: p["limit"] as? Int ?? 150).map {
-            ["role": $0.role, "label": $0.label,
+            ["role": $0.role, "label": hide ? SensitiveDataFinder.mask($0.label).0 : $0.label,
              "frame": ["x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height]]
         }
     }
@@ -241,6 +244,11 @@ enum AgentAPI {
         }
     }
 
+    /// Only the user can switch hiding off (in Preferences); a request can ask for more, never less.
+    private static func mustRedact(_ p: [String: Any]) -> Bool {
+        Settings.shared.agentHideSensitive || (p["redact"] as? Bool) == true
+    }
+
     private static func number(_ value: Any?) -> CGFloat? {
         (value as? NSNumber).map { CGFloat($0.doubleValue) }
     }
@@ -255,7 +263,7 @@ enum AgentAPI {
             let mode = p["mode"] as? String ?? (p["x"] != nil ? "area" : "interactive")
             var capture = try await self.image(mode: mode, p)
             // Read from the covered image, so private text never reaches the AI tool.
-            if (p["redact"] as? Bool) ?? Settings.shared.agentHideSensitive {
+            if mustRedact(p) {
                 capture = await AgentRedaction.redact(capture).0
             }
             image = capture.image

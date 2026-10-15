@@ -87,7 +87,6 @@ clarishot: control Clarishot from the terminal or an AI tool.
       --interactive                   Let you drag an area
       --element APP:QUERY             One part of an app by name, e.g. Safari:Downloads
       --smart                         Let you click one element of an app
-      --no-redact                     Don't cover private text (see Preferences)
       --cutout                        Cut out the subject of an area (with --area, or drag)
       --show                          Also show it in Clarishot (preview, after-capture actions)
   clarishot ocr [--path FILE | --interactive | any screenshot option]   Print the text it reads
@@ -122,7 +121,6 @@ func captureParams(_ args: [String]) throws -> [String: Any] {
     if let el = value(after: "--element", in: args), let colon = el.firstIndex(of: ":") {
         p = ["mode": "element", "app": String(el[..<colon]), "query": String(el[el.index(after: colon)...])]
     }
-    if args.contains("--no-redact") { p["redact"] = false }
     if args.contains("--cutout") { p["mode"] = "cutout" }
     if args.contains("--fullscreen") || p.isEmpty { p["mode"] = p["mode"] ?? "fullscreen" }
     if let display = value(after: "--display", in: args).flatMap(Int.init) { p["display"] = display }

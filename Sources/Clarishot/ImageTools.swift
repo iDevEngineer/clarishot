@@ -84,6 +84,25 @@ enum SensitiveDataFinder {
         return matches
     }
 
+    /// The same checks on plain text (window titles, element labels): private parts become
+    /// "[hidden]". Returns the cleaned text and how many parts were hidden.
+    static func mask(_ text: String) -> (String, Int) {
+        var result = text, count = 0
+        // Replace from the end so earlier ranges stay valid.
+        for (range, _) in sensitiveRanges(in: text).sorted(by: { $0.0.lowerBound > $1.0.lowerBound }) {
+            result.replaceSubrange(range, with: "[hidden]")
+            count += 1
+        }
+        if let label = labelMatch(in: result), label.upperBound < result.endIndex {
+            let value = result[label.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " :=\t"))
+            if !value.isEmpty, value != "[hidden]" {
+                result = String(result[..<label.upperBound]) + " [hidden]"
+                count += 1
+            }
+        }
+        return (result, count)
+    }
+
     /// Vision's normalised, bottom-left box → image points, top-left origin.
     private static func toPoints(_ box: CGRect, _ size: CGSize) -> CGRect {
         CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height, width: box.width * size.width,

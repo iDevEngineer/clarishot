@@ -96,8 +96,8 @@ Add this to the app's MCP configuration (**Copy JSON** in Preferences copies it)
 
 **Private text is covered.** With **Hide sensitive info from AI tools** on (the default), emails, phone
 numbers, card numbers, API keys and passwords are covered with black boxes before the AI tool gets a
-screenshot or its text; the result's `hiddenSensitiveItems` says how many. Pass `redact: false` (or
-`--no-redact`) for one capture, or turn the setting off.
+screenshot or its text; the result's `hiddenSensitiveItems` says how many. Window titles and element
+labels are checked too. Only you can turn this off, in Preferences; an AI tool can't ask for it.
 
 `annotate_image` shapes use the image's points (top-left origin; a screenshot's `pointWidth` and
 `pointHeight`):
