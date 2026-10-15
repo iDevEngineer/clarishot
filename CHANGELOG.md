@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Changed
-- Advanced: clearer names for the AI app rows (Claude Code covers the Terminal and the Code tab; Claude app (Chat) covers regular conversations).
+- Advanced: clearer names and order for the AI app rows (Claude Code covers the Terminal and the Code tab; Claude app (Chat) covers regular conversations).
 
 ## [0.3.0] - 2026-10-15
 
