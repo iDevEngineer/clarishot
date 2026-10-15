@@ -56,10 +56,11 @@ enum BackgroundFill {
     }
 
     @MainActor private static var pictureCache: [URL: CGImage] = [:]
-    @MainActor private static var blurCache: [Int: (source: CGImage, result: CGImage)] = [:]
+    @MainActor private static var blurCache: [Int: (generation: Int, result: CGImage)] = [:]
 
     @MainActor
     static func pictureImage(_ url: URL) -> CGImage? {
+        MemoryTrim.soon { pictureCache.removeAll() }
         if let cached = pictureCache[url] { return cached }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -74,7 +75,7 @@ enum BackgroundFill {
     @MainActor
     static func blurredWallpaper(_ variant: Int) -> CGImage? {
         guard let wallpaper = Wallpaper.image else { return nil }
-        if let cached = blurCache[variant], cached.source === wallpaper { return cached.result }
+        if let cached = blurCache[variant], cached.generation == Wallpaper.generation { return cached.result }
         let small = min(1, 1200 / CGFloat(max(wallpaper.width, wallpaper.height)))
         var input = CIImage(cgImage: wallpaper).transformed(by: .init(scaleX: small, y: small))
         let extent = input.extent
@@ -84,7 +85,7 @@ enum BackgroundFill {
                                                                        kCIInputSaturationKey: variant == 1 ? 1.1 : 0.7])
         }
         guard let result = CIContext().createCGImage(input, from: extent) else { return nil }
-        blurCache[variant] = (wallpaper, result)
+        blurCache[variant] = (Wallpaper.generation, result)
         return result
     }
 
@@ -159,7 +160,12 @@ enum BackgroundFill {
 @MainActor
 enum Wallpaper {
     private static var fileCache: (url: URL, image: CGImage)?
-    private static var live: [CGDirectDisplayID: CGImage] = [:]
+    /// The live wallpaper per display, kept compressed (a few MB instead of ~20 MB per Retina
+    /// screen). It's decoded when needed and the decoded copy is dropped after a short idle spell.
+    private static var live: [CGDirectDisplayID: Data] = [:]
+    private static var decoded: [CGDirectDisplayID: CGImage] = [:]
+    /// Goes up whenever the wallpaper changes, so caches built from it know to rebuild.
+    private(set) static var generation = 0
     private static var observers: [NSObjectProtocol] = []
 
     /// Starts keeping the live wallpaper up to date. Call once at launch.
@@ -199,10 +205,21 @@ enum Wallpaper {
             config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
             config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
             config.showsCursor = false
-            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) {
-                live[id] = image
+            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config),
+               let data = compress(image) {
+                live[id] = data
+                decoded[id] = nil
+                generation += 1
             }
         }
+    }
+
+    /// HEIC at high quality: visually the same for a background, a fraction of the memory.
+    private static func compress(_ image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, "public.heic" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? data as Data : nil
     }
 
     static func url(for screen: NSScreen? = NSScreen.main) -> URL? {
@@ -212,8 +229,15 @@ enum Wallpaper {
     }
 
     static func image(for screen: NSScreen? = NSScreen.main) -> CGImage? {
-        if Settings.shared.customWallpaper == nil, let screen, let image = live[ScreenCapturer.displayID(for: screen)] {
-            return image
+        MemoryTrim.soon { decoded.removeAll(); fileCache = nil }
+        if Settings.shared.customWallpaper == nil, let screen {
+            let id = ScreenCapturer.displayID(for: screen)
+            if let image = decoded[id] { return image }
+            if let data = live[id], let source = CGImageSourceCreateWithData(data as CFData, nil),
+               let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) {
+                decoded[id] = image
+                return image
+            }
         }
         guard let url = url(for: screen) else { return nil }
         if let fileCache, fileCache.url == url { return fileCache.image }
@@ -690,5 +714,31 @@ enum ContentBalance {
         if cache.count > 40 { cache.removeAll() }
         cache[key] = result
         return result
+    }
+}
+
+
+/// Frees big decoded images (wallpapers, background pictures) once Clarishot has been idle for a
+/// while, so a menu-bar app doesn't sit on tens of MB between captures. Each use pushes it back.
+@MainActor
+enum MemoryTrim {
+    private static var actions: [String: () -> Void] = [:]
+    private static var pending: DispatchWorkItem?
+    private static let delay: TimeInterval = 60
+
+    /// Runs `action` after `delay` seconds without another call. Calls from the same place replace
+    /// each other.
+    static func soon(file: String = #fileID, line: Int = #line, _ action: @escaping () -> Void) {
+        actions["\(file):\(line)"] = action
+        pending?.cancel()
+        let work = DispatchWorkItem {
+            MainActor.assumeIsolated {
+                let all = actions
+                actions.removeAll()
+                all.values.forEach { $0() }
+            }
+        }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 }

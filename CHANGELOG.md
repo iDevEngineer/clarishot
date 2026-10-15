@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- Uses about 60% less memory at rest: the live wallpaper is kept compressed, and large decoded images are freed after a minute idle.
+
 ### Added
 - Menu-bar menu: icons for Quit and Preferences.
 
