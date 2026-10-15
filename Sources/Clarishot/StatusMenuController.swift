@@ -69,7 +69,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         add(menu, "Check for Updates...", symbol: "arrow.triangle.2.circlepath", action: #selector(checkForUpdates))
         add(menu, "Setup Guide...", symbol: "checklist", action: #selector(setupGuide))
         menu.addItem(.separator())
-        let settings = add(menu, "Preferences...", symbol: nil, action: #selector(openSettings))
+        let settings = add(menu, "Preferences...", symbol: "gearshape", action: #selector(openSettings))
         settings.keyEquivalent = ","
         settings.keyEquivalentModifierMask = .command
         menu.addItem(.separator())

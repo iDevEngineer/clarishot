@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
-- Menu-bar menu: icon for Quit.
+- Menu-bar menu: icons for Quit and Preferences.
 
 ## [0.2.1] - 2026-10-15
 
