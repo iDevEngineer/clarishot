@@ -30,4 +30,4 @@ elsewhere helps.
 - New permissions need a clear reason and should only be requested when the feature is used.
 - Be kind in issues and reviews.
 
-By contributing, you agree your work is released under the [MIT licence](LICENSE).
+By contributing, you agree your work is released under the [GNU General Public License v3.0](LICENSE).

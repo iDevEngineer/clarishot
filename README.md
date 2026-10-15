@@ -2,7 +2,7 @@
   <img src="Resources/Brand/clarishot-icon.png" width="160" height="160" alt="Clarishot icon" />
   <h1>Clarishot</h1>
   <p><strong>Screenshots, screen recordings and annotation for macOS, from the menu bar.</strong></p>
-  <p>Native Swift and AppKit · ScreenCaptureKit · Vision · open source (MIT)</p>
+  <p>Native Swift and AppKit · ScreenCaptureKit · Vision · open source (GPL-3.0)</p>
 </div>
 
 ---
@@ -144,4 +144,6 @@ from your own user account.
 
 ## Licence
 
-[MIT](LICENSE) © 2026 Scott Mackey
+Copyright © 2026 Scott Mackey. Released under the [GNU General Public License v3.0](LICENSE): you can use,
+change and share Clarishot, and any version you share must also be open source under the same licence.
+Versions up to 0.1.1 were released under the MIT licence.
