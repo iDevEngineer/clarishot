@@ -196,7 +196,13 @@ enum Wallpaper {
               let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         else { return }
         let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-        let pictures = content.windows.filter { $0.windowLayer < iconLevel }
+        let belowIcons = content.windows.filter { $0.windowLayer < iconLevel }
+        // Only the windows that draw the picture. The Dock also keeps an invisible "Fullscreen
+        // Backdrop" above it that captures as solid black, so it must be left out.
+        let wallpapers = belowIcons.filter {
+            ($0.title ?? "").hasPrefix("Wallpaper") || $0.owningApplication?.bundleIdentifier == "com.apple.wallpaper.agent"
+        }
+        let pictures = wallpapers.isEmpty ? belowIcons.filter { $0.title != "Fullscreen Backdrop" } : wallpapers
         for screen in NSScreen.screens {
             let id = ScreenCapturer.displayID(for: screen)
             guard let display = content.displays.first(where: { $0.displayID == id }), !pictures.isEmpty else { continue }
