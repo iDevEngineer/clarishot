@@ -50,5 +50,5 @@ First public release.
 - Preferences with themes, optional Liquid Glass, and every shortcut configurable.
 - MCP server and `clarishot` command-line tool for AI tools and scripts; `clarishot://` links.
 
-[Unreleased]: https://github.com/Synced-Co/clarishot/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Synced-Co/clarishot/releases/tag/v0.1.0
+[Unreleased]: https://github.com/iDevEngineer/clarishot/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/iDevEngineer/clarishot/releases/tag/v0.1.0

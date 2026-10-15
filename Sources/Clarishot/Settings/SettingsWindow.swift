@@ -1018,7 +1018,7 @@ final class AdvancedPane: SettingsPane {
 
 final class AboutPane: NSViewController {
     private static let website = URL(string: "https://syncedco.com")!
-    private static let repo = URL(string: "https://github.com/Synced-Co/clarishot")!
+    private static let repo = URL(string: "https://github.com/iDevEngineer/clarishot")!
     private var targets: [Callback] = []
 
     override func loadView() {

@@ -41,7 +41,7 @@ current, new, today = sys.argv[1:]
 path = "CHANGELOG.md"
 text = open(path).read()
 text = text.replace("## [Unreleased]\n", f"## [Unreleased]\n\n## [{new}] - {today}\n", 1)
-repo = "https://github.com/Synced-Co/clarishot"
+repo = "https://github.com/iDevEngineer/clarishot"
 text = re.sub(r"\[Unreleased\]: .*", f"[Unreleased]: {repo}/compare/v{new}...HEAD\n[{new}]: {repo}/compare/v{current}...v{new}", text, count=1)
 open(path, "w").write(text)
 # Notes for this release only, for the GitHub release page.

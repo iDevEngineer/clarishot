@@ -60,7 +60,7 @@ built-in MCP server.
 Clarishot is currently built from source. You need Xcode 26 or later (or its command-line tools), because the code uses the macOS 26 SDK.
 
 ```bash
-git clone https://github.com/Synced-Co/clarishot.git
+git clone https://github.com/iDevEngineer/clarishot.git
 cd clarishot
 ./scripts/build-app.sh
 ```
