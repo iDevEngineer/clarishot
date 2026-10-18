@@ -12,3 +12,6 @@ research/
 .DS_Store
 .claude/
 .swiftpm/
+
+# Asqu version history (local)
+.asqu/
