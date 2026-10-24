@@ -65,6 +65,8 @@ final class ScrollStitcher {
     // MARK: Adding frames
 
     func add(_ frame: CGImage) -> Outcome {
+        let span = Perf.begin("scroll.stitch")
+        defer { span.end() }
         guard frame.width == frameWidth, frame.height == frameHeight else { return .lost }
 
         let axes: [Axis] = axis.map { [$0] } ?? [.vertical, .horizontal]

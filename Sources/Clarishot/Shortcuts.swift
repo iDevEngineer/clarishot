@@ -97,6 +97,7 @@ enum ShortcutAction: String, CaseIterable {
 
     @MainActor
     func perform() {
+        Perf.trigger(rawValue)
         let c = CaptureCoordinator.shared
         switch self {
         case .allInOne: c.allInOne()

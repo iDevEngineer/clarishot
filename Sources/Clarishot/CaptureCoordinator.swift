@@ -256,17 +256,19 @@ final class CaptureCoordinator {
     /// Runs the after-capture actions from Preferences → Screenshots for a finished screenshot.
     func deliver(_ original: Capture) {
         let settings = Settings.shared
+        let exportSpan = Perf.begin("deliver.export")
         var capture = settings.scaleScreenshotsTo1x ? original.scaledTo1x() : original
         if !capture.isVideo, let name = settings.autoBackgroundPreset, let style = BackgroundPresets.style(named: name),
            let framed = BackgroundRenderer.compose(capture.image, scale: capture.scale, style: style) {
             capture = Capture(image: framed, scale: capture.scale).from(capture.sourceBundleID)
         }
         capture = capture.finishedForExport()
+        exportSpan.end()
         if settings.playSounds { CaptureSound.play() }
-        HistoryStore.shared.add(capture)
+        Perf.measure("deliver.history") { HistoryStore.shared.add(capture) }
         var acted = false
         if settings.afterCaptureCopy {
-            capture.copyToClipboard()
+            Perf.measure("deliver.clipboard") { capture.copyToClipboard() }
             acted = true
         }
         if settings.afterCaptureSave {
@@ -287,7 +289,8 @@ final class CaptureCoordinator {
             acted = true
         }
         if settings.afterCaptureShowPreview || !acted {
-            PreviewManager.shared.show(capture)
+            Perf.measure("deliver.preview") { PreviewManager.shared.show(capture) }
+            Perf.mark("preview.shown")
         } else if settings.afterCaptureSave {
             Toast.show(settings.afterCaptureCopy ? "Copied and saved" : "Saved")
         } else if settings.afterCaptureCopy {
@@ -351,11 +354,13 @@ final class CaptureCoordinator {
                          allowsWindowPick: Bool = false,
                          initial: (displayID: CGDirectDisplayID, rect: CGRect)? = nil,
                          completion: @escaping (SelectionResult?) -> Void) {
-        let controller = SelectionOverlayController(shots: shots, mode: mode, targets: targets, hint: hint,
-                                                    allowsWindowPick: allowsWindowPick,
-                                                    initial: initial) { [weak self] result in
-            self?.overlay = nil
-            completion(result)
+        let controller = Perf.measure("overlay.init") {
+            SelectionOverlayController(shots: shots, mode: mode, targets: targets, hint: hint,
+                                       allowsWindowPick: allowsWindowPick,
+                                       initial: initial) { [weak self] result in
+                self?.overlay = nil
+                completion(result)
+            }
         }
         overlay = controller
         controller.show()

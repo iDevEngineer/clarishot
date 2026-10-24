@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- Clarishot now runs on Intel Macs as well as Apple silicon (universal build).
+- Saving as WebP now works on Intel Macs and on macOS 14 Sonoma.
+- The preview card appears in about half the time (60 ms instead of 123 ms): Capture History saves in the background.
+- The area overlay appears sooner and stays smooth while you drag, even on large screens.
+- Opening Capture History no longer freezes the app while thumbnails load.
+- Screenshots taken by AI tools no longer pause the app while they're saved.
+
 ## [0.3.1] - 2026-10-15
 
 ### Changed

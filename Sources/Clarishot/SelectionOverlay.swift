@@ -55,7 +55,15 @@ final class SelectionOverlayController {
                                    shot: shot, mode: mode, targets: targets, hint: hint, initialSelection: start)
             view.allowsWindowPick = allowsWindowPick
             view.onFinish = { [weak self] result in self?.finish(result) }
-            window.contentView = view
+            // The frozen screen is a layer's contents, which the GPU shows as it is. Drawing it in
+            // the view meant redrawing a whole Retina screen on the CPU for every mouse move.
+            let background = NSView(frame: view.frame)
+            background.wantsLayer = true
+            background.layer?.contents = shot.image
+            background.layer?.contentsGravity = .resize
+            background.addSubview(view)
+            window.contentView = background
+            window.overlay = view
             window.setFrame(shot.screen.frame, display: false)
             windows.append(window)
         }
@@ -67,13 +75,16 @@ final class SelectionOverlayController {
         NSApp.activate(ignoringOtherApps: true)
         // Keys may still go to the app behind (macOS doesn't always let us become active),
         // so catch Space, Esc and Return system-wide while the overlay is up.
-        keyTap = KeyTap { [weak self] keyCode, isDown in self?.handleKey(keyCode, isDown: isDown) ?? false }
-        for window in windows { window.orderFrontRegardless() }
+        keyTap = Perf.measure("overlay.keytap") {
+            KeyTap { [weak self] keyCode, isDown in self?.handleKey(keyCode, isDown: isDown) ?? false }
+        }
+        Perf.measure("overlay.order") { for window in windows { window.orderFrontRegardless() } }
+        Perf.mark("overlay.ordered")
         let mouse = NSEvent.mouseLocation
         let keyWindow = windows.first { $0.frame.contains(mouse) } ?? windows.first
         keyWindow?.makeKey()
-        keyWindow?.makeFirstResponder(keyWindow?.contentView)
-        if let view = keyWindow?.contentView as? OverlayView, view.isWindowMode {
+        keyWindow?.makeFirstResponder(keyWindow?.overlay)
+        if let view = keyWindow?.overlay, view.isWindowMode {
             CameraCursor.shared.set()
         } else {
             CrosshairCursor.shared.set()
@@ -82,7 +93,7 @@ final class SelectionOverlayController {
 
     /// Returns true if the key was used (and should not reach other apps).
     private func handleKey(_ keyCode: Int64, isDown: Bool) -> Bool {
-        let views = windows.compactMap { $0.contentView as? OverlayView }
+        let views = windows.compactMap(\.overlay)
         switch keyCode {
         case 49: // space: move the box while dragging, or switch between area and window picking
             if isDown, !views.contains(where: \.isDragging), views.first?.allowsWindowPick == true {
@@ -107,7 +118,7 @@ final class SelectionOverlayController {
         finished = true
         keyTap = nil
         for window in windows {
-            (window.contentView as? OverlayView)?.stopWatchingKeys()
+            window.overlay?.stopWatchingKeys()
             window.orderOut(nil)
         }
         windows.removeAll()
@@ -117,6 +128,7 @@ final class SelectionOverlayController {
 }
 
 final class OverlayWindow: NSWindow {
+    var overlay: OverlayView?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -531,9 +543,22 @@ final class OverlayView: NSView {
 
     // MARK: Drawing
 
+    private var hasDrawn = false
+
     override func draw(_ dirtyRect: NSRect) {
+        let span = Perf.begin("overlay.draw")
+        defer {
+            span.end()
+            if !hasDrawn {
+                hasDrawn = true
+                Perf.mark("overlay.drawn")
+                // `--perf-cancel-overlay`: scripts/perf.sh times the overlay, then closes it.
+                if CommandLine.arguments.contains("--perf-cancel-overlay") {
+                    DispatchQueue.main.async { [weak self] in self?.onFinish?(nil) }
+                }
+            }
+        }
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.draw(shot.image, in: bounds)
 
         // While an instruction pill shows (before any area is chosen), dim the whole screen.
         let showsHint = pickingWindow || (hint != nil && selection == nil)
@@ -735,8 +760,9 @@ final class OverlayView: NSView {
         guard let ctx = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        // Draw so the wanted pixel (top-left origin) lands on the single output pixel.
-        ctx.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+        // Crop to the wanted pixel (top-left origin) rather than drawing the whole screen.
+        guard let one = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
+        ctx.draw(one, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         return String(format: "#%02X%02X%02X", pixel[0], pixel[1], pixel[2])
     }
 

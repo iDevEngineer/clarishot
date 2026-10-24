@@ -229,4 +229,4 @@ Turn Clarishot on in System Settings → Privacy & Security → **Accessibility*
 Another app may use it. Change it in Preferences → Shortcuts.
 
 **WebP isn't in the format list.**
-The build couldn't find Google's WebP library. Run `brew install webp` and build again.
+The app was built with `WEBP=0`, or without internet the first time. Build it again while online.

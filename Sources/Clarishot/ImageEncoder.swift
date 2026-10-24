@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 enum ImageEncoder {
     /// Quality 0…1. For WebP, 1 means lossless.
     static func encode(_ image: CGImage, as format: Settings.ImageFormat, quality: Double, pointSize: CGSize) -> Data? {
+        let span = Perf.begin("encode")
+        defer { span.end() }
         switch format {
         case .png, .jpeg:
             let rep = NSBitmapImageRep(cgImage: image)

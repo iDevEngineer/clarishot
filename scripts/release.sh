@@ -26,6 +26,32 @@ if git rev-parse "v$NEW" >/dev/null 2>&1; then
     echo "error: tag v$NEW already exists" >&2; exit 1
 fi
 
+# Notarised releases need a "Developer ID Application" certificate in the keychain and notary
+# credentials saved once with:  xcrun notarytool store-credentials clarishot
+# Without them macOS blocks the download, so stop here unless ALLOW_UNNOTARISED=1.
+DEV_ID=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
+if [ -z "$DEV_ID" ]; then
+    if [ "${ALLOW_UNNOTARISED:-0}" != "1" ]; then
+        echo "error: no Developer ID Application certificate, so this release can't be notarised and macOS" >&2
+        echo "       would block it. Add the certificate, or rerun with ALLOW_UNNOTARISED=1 to ship anyway." >&2
+        exit 1
+    fi
+    echo "warning: no Developer ID Application certificate; this build is NOT notarised and macOS will block it." >&2
+fi
+
+# Speed budget: build and measure before anything is bumped or tagged, so a slower build can't ship.
+# The limits sit a little above today's numbers (overlay 54 ms, preview card 60 ms on an M-series
+# MacBook Air), so this catches a slowdown; perf.sh's own targets are the goals.
+# The screen flashes for a few minutes while it runs. Skip with SKIP_PERF=1.
+if [ "${SKIP_PERF:-0}" != "1" ]; then
+    INSTALL=0 ./scripts/build-app.sh
+    RUNS=15 CAPTURES=30 IDLE_SECONDS=20 BUDGET_OVERLAY_MS=65 BUDGET_PREVIEW_MS=90 \
+        ./scripts/perf.sh --check "release-$NEW" || {
+        echo "error: over the speed budget (see build/perf/release-$NEW). Fix it, or rerun with SKIP_PERF=1." >&2
+        exit 1
+    }
+fi
+
 # Warn if nothing was noted under Unreleased.
 if ! awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f && /[^[:space:]]/{found=1} END{exit !found}' CHANGELOG.md; then
     echo "warning: CHANGELOG.md has no notes under [Unreleased]; this release will have empty notes." >&2
@@ -55,13 +81,9 @@ git add VERSION CHANGELOG.md
 git commit -q -m "Release v$NEW"
 git tag -a "v$NEW" -m "Clarishot $NEW"
 
-# Notarised releases need a "Developer ID Application" certificate in the keychain and notary
-# credentials saved once with:  xcrun notarytool store-credentials clarishot
-DEV_ID=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
 if [ -n "$DEV_ID" ]; then
     SIGN_IDENTITY="$DEV_ID" INSTALL=0 ./scripts/build-app.sh
 else
-    echo "warning: no Developer ID Application certificate; this build is NOT notarised and macOS will warn users." >&2
     INSTALL=0 ./scripts/build-app.sh
 fi
 ZIP="build/Clarishot-$NEW.zip"
