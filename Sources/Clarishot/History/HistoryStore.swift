@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import UniformTypeIdentifiers
 
 /// Keeps a copy of every capture for Preferences → General → "Keep capture history"
 /// (off, 1 day, 1 week or 1 month). Files live in Application Support/Clarishot/History.
@@ -61,22 +62,36 @@ final class HistoryStore {
         let ext = capture.videoURL?.pathExtension ?? "png"
         let file = "\(id.uuidString).\(ext)"
         let url = folder.appendingPathComponent(file)
-        do {
-            if let video = capture.videoURL {
+        let item = Item(id: id, date: capture.date, kind: kind, file: file, scale: capture.scale,
+                        duration: capture.duration, pixelWidth: capture.image.width,
+                        pixelHeight: capture.image.height, sourceBundleID: capture.sourceBundleID)
+        if let video = capture.videoURL {
+            do {
                 try FileManager.default.copyItem(at: video, to: url)
                 ClickLog.copy(from: capture.sourceVideoURL ?? video, to: url)
-            } else {
-                // Always PNG here so history keeps full quality.
-                let rep = NSBitmapImageRep(cgImage: capture.image)
-                guard let png = rep.representation(using: .png, properties: [:]) else { return }
-                try png.write(to: url)
+            } catch {
+                return
             }
-        } catch {
+            insert(item)
             return
         }
-        items.insert(Item(id: id, date: capture.date, kind: kind, file: file, scale: capture.scale,
-                          duration: capture.duration, pixelWidth: capture.image.width,
-                          pixelHeight: capture.image.height, sourceBundleID: capture.sourceBundleID), at: 0)
+        // Encoding a full-screen PNG takes tens of milliseconds, so it happens off the main thread;
+        // the item appears once its file is written. One queue keeps captures in order.
+        let image = capture.image
+        Self.writer.async {
+            // Always PNG here so history keeps full quality.
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+            else { return }
+            CGImageDestinationAddImage(dest, image, nil)
+            guard CGImageDestinationFinalize(dest) else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self.insert(item) } }
+        }
+    }
+
+    private static let writer = DispatchQueue(label: "com.scottmackey.clarishot.history", qos: .utility)
+
+    private func insert(_ item: Item) {
+        items.insert(item, at: 0)
         save()
     }
 
@@ -105,10 +120,15 @@ final class HistoryStore {
             var image: CGImage?
             if item.kind == .recording {
                 image = await Self.firstFrame(of: url)
-            } else if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
-                let options = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                               kCGImageSourceThumbnailMaxPixelSize: 480] as CFDictionary
-                image = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+            } else {
+                // Decoding a full-screen PNG takes ~70 ms; off the main thread, a window of them loads
+                // in parallel instead of freezing the app while History opens.
+                image = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+                    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                    let options = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                   kCGImageSourceThumbnailMaxPixelSize: 480] as CFDictionary
+                    return Perf.measure("history.thumbnail") { CGImageSourceCreateThumbnailAtIndex(source, 0, options) }
+                }.value
             }
             let result = image.map { NSImage(cgImage: $0, size: CGSize(width: $0.width, height: $0.height)) }
             if let result { thumbnails[item.id] = result }

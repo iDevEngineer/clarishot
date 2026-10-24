@@ -39,7 +39,7 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
     // MARK: Controls
 
     func start() async throws {
-        try await startSegment()
+        try await Perf.measure("record.start") { try await startSegment() }
     }
 
     func pause() async {
@@ -56,6 +56,8 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
 
     /// Stops and returns the finished movie.
     func finish() async throws -> URL {
+        let span = Perf.begin("record.finish")
+        defer { span.end() }
         if !isPaused { await stopSegment() }
         return try await joinSegments()
     }

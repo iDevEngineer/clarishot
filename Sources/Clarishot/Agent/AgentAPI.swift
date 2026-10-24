@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The actions available to the `clarishot` CLI and MCP server.
 /// Coordinates are global screen points with a top-left origin (the same as most screenshot
@@ -85,7 +86,9 @@ enum AgentAPI {
         var capture = try await image(mode: mode, p)
         var hidden = 0
         if mustRedact(p) {
+            let span = Perf.begin("agent.redact")
             (capture, hidden) = await AgentRedaction.redact(capture)
+            span.end()
         }
         if (p["show"] as? Bool) == true {
             CaptureCoordinator.shared.deliver(capture)
@@ -100,10 +103,19 @@ enum AgentAPI {
             url = outputFolder.appendingPathComponent("Clarishot \(Capture.timestamp(capture.date)) (\(n)).png")
             n += 1
         }
-        guard let png = ImageEncoder.encode(capture.image, as: .png, quality: 1, pointSize: capture.pointSize) else {
-            throw AgentError("Could not encode the screenshot")
+        // The reply waits for the file anyway; encoding off the main thread keeps the app responsive.
+        let image = capture.image, file = url
+        // Same as before: the DPI says how many pixels make a point (144 on Retina).
+        let dpi = 72 * capture.scale
+        let written = await Perf.measure("agent.encode") {
+            await Task.detached(priority: .userInitiated) { () -> Bool in
+                guard let dest = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil)
+                else { return false }
+                CGImageDestinationAddImage(dest, image, [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary)
+                return CGImageDestinationFinalize(dest)
+            }.value
         }
-        try png.write(to: url)
+        guard written else { throw AgentError("Could not encode the screenshot") }
         var result: [String: Any] = ["path": url.path, "width": capture.image.width, "height": capture.image.height,
                                      "scale": capture.scale, "mode": mode, "pointWidth": capture.pointSize.width,
                                      "pointHeight": capture.pointSize.height]

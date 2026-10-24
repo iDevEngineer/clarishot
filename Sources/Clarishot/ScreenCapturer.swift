@@ -34,10 +34,86 @@ enum ScreenCapturer {
 
     /// Captures every screen at full Retina resolution, leaving out Clarishot's own windows.
     static func captureAllScreens() async throws -> [ScreenShot] {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        // Keep the wallpaper cover in shots so hidden desktop icons stay hidden.
-        let coverIDs = Set(DesktopIconHider.shared.windows.map { CGWindowID($0.windowNumber) })
+        let span = Perf.begin("capture.screens")
+        defer { span.end() }
+        let screens = NSScreen.screens
+        let filters = try await contentFilters(for: screens)
+        let showsCursor = Settings.shared.showCursorInScreenshots
+        // All screens at once: each capture waits on the window server, not on us.
+        let shots = try await withThrowingTaskGroup(of: (Int, CGImage).self) { group in
+            for (index, screen) in screens.enumerated() {
+                guard let (filter, display) = filters[ScreenCapturer.displayID(for: screen)] else { continue }
+                let config = SCStreamConfiguration()
+                config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
+                config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
+                config.showsCursor = showsCursor
+                config.captureResolution = .best
+                group.addTask {
+                    let image = try await Perf.measure("capture.screen") {
+                        try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                    }
+                    return (index, image)
+                }
+            }
+            var images: [Int: CGImage] = [:]
+            for try await (index, image) in group { images[index] = image }
+            return screens.indices.compactMap { i in images[i].map { ScreenShot(screen: screens[i], image: $0) } }
+        }
+        if shots.isEmpty { throw CaptureError.displayNotFound }
+        return shots
+    }
+
+    /// The displays and Clarishot's own app, from ScreenCaptureKit. Fetching them takes ~25 ms and they
+    /// rarely change, so they're kept between captures; changing screens clears them. Off-screen
+    /// windows are included so Clarishot is listed even with no window showing (menu bar icon hidden).
+    private static var kept: (displays: [SCDisplay], own: SCRunningApplication)?
+    private static var watchingScreens = false
+
+    private static func keptDisplaysAndApp() async -> (displays: [SCDisplay], own: SCRunningApplication)? {
+        if let kept { return kept }
+        guard let content = try? await Perf.measure("capture.content", {
+            try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+        }) else { return nil }
         let pid = ProcessInfo.processInfo.processIdentifier
+        guard let own = content.applications.first(where: { $0.processID == pid }) else { return nil }
+        if !watchingScreens {
+            watchingScreens = true
+            NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                                   object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { kept = nil }
+            }
+        }
+        kept = (content.displays, own)
+        return kept
+    }
+
+    private static func freshContent() async throws -> SCShareableContent {
+        try await Perf.measure("capture.content") {
+            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        }
+    }
+
+    /// One filter per display ID, leaving out Clarishot's own windows (and the desktop icons, if set).
+    private static func contentFilters(for screens: [NSScreen]) async throws
+        -> [CGDirectDisplayID: (SCContentFilter, SCDisplay)] {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let covers = DesktopIconHider.shared.windows
+        let ids = screens.map(displayID(for:))
+        // Fast path: only whole apps are left out (Clarishot), so a kept list of displays will do.
+        // Leaving out single windows (the desktop icons, or keeping the wallpaper cover) needs today's windows.
+        if covers.isEmpty, !Settings.shared.hideDesktopIconsWhileCapturing, let (displays, own) = await keptDisplaysAndApp(),
+           ids.allSatisfy({ id in displays.contains { $0.displayID == id } }) {
+            var filters: [CGDirectDisplayID: (SCContentFilter, SCDisplay)] = [:]
+            for display in displays where ids.contains(display.displayID) {
+                filters[display.displayID] = (SCContentFilter(display: display, excludingApplications: [own],
+                                                              exceptingWindows: []), display)
+            }
+            return filters
+        }
+
+        let content = try await freshContent()
+        // Keep the wallpaper cover in shots so hidden desktop icons stay hidden.
+        let coverIDs = Set(covers.map { CGWindowID($0.windowNumber) })
         var excluded = content.windows.filter { $0.owningApplication?.processID == pid && !coverIDs.contains($0.windowID) }
         if Settings.shared.hideDesktopIconsWhileCapturing {
             let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
@@ -45,21 +121,11 @@ enum ScreenCapturer {
                 $0.owningApplication?.bundleIdentifier == "com.apple.finder" && $0.windowLayer == iconLevel
             }
         }
-        var shots: [ScreenShot] = []
-        for screen in NSScreen.screens {
-            let id = displayID(for: screen)
-            guard let display = content.displays.first(where: { $0.displayID == id }) else { continue }
-            let filter = SCContentFilter(display: display, excludingWindows: excluded)
-            let config = SCStreamConfiguration()
-            config.width = Int(CGFloat(display.width) * screen.backingScaleFactor)
-            config.height = Int(CGFloat(display.height) * screen.backingScaleFactor)
-            config.showsCursor = Settings.shared.showCursorInScreenshots
-            config.captureResolution = .best
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            shots.append(ScreenShot(screen: screen, image: image))
+        var filters: [CGDirectDisplayID: (SCContentFilter, SCDisplay)] = [:]
+        for display in content.displays where ids.contains(display.displayID) {
+            filters[display.displayID] = (SCContentFilter(display: display, excludingWindows: excluded), display)
         }
-        if shots.isEmpty { throw CaptureError.displayNotFound }
-        return shots
+        return filters
     }
 
     /// Captures a single window on its own, with transparent corners.

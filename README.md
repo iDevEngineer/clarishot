@@ -51,7 +51,7 @@ built-in MCP server.
 
 ## Requirements
 
-- macOS 14 Sonoma or later
+- macOS 14 Sonoma or later, on Apple silicon or Intel
 - Screen recording needs macOS 15 Sequoia or later
 - The Liquid Glass look needs macOS 26 or later
 
@@ -77,7 +77,7 @@ cd clarishot
 ```
 
 The script builds the app, copies it to `/Applications/Clarishot.app`, and you can open it from there.
-For WebP output, install Google's WebP library first with `brew install webp`. The build bundles it inside the app.
+The first build also downloads and builds Google's WebP library, which the app bundles for WebP output.
 More options are in the [developer guide](docs/DEVELOPMENT.md).
 
 ### Permissions
